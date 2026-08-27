@@ -2,21 +2,31 @@ import Foundation
 
 @objc(PokeEmuCoreModule)
 class PokeEmuCoreModule: NSObject {
+  private let bridge = MGBABridge()
 
   @objc(loadROM:withResolver:withRejecter:)
   func loadROM(path: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    // Task 10 replaces this stub with real mGBA loading via MGBABridge.
-    resolve(["width": 240, "height": 160])
+    guard let dims = bridge.load(path: path) else {
+      reject("LOAD_FAILED", "Could not load ROM at \(path)", nil)
+      return
+    }
+    resolve(["width": dims.width, "height": dims.height])
   }
 
   @objc(unloadROM:withRejecter:)
   func unloadROM(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    bridge.unload()
     resolve(nil)
   }
 
-  @objc func play() {}
-  @objc func pause() {}
-  @objc func setButtonState(_ button: String, pressed: Bool) {}
+  @objc func play() { bridge.play() }
+  @objc func pause() { bridge.pause() }
+
+  @objc func setButtonState(_ button: String, pressed: Bool) {
+    guard let mask = GBAKeyMask.forButtonName(button) else { return }
+    bridge.setKey(mask, pressed: pressed)
+  }
+
   @objc func setFastForward(_ enabled: Bool, speedMultiplier: Double) {}
 
   @objc(saveState:slotIndex:withResolver:withRejecter:)

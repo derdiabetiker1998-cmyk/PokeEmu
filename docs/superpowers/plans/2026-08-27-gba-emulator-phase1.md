@@ -1186,7 +1186,7 @@ git commit -m "feat: scaffold PokeEmuCore native module bridge (stubbed) on iOS 
 ### Task 10: Wire the real mGBA core (both platforms)
 
 **Files:**
-- Create: `ios/PokeEmu/MGBABridge.swift`
+- Create: `ios/PokeEmu/MGBABridge.swift`, `ios/PokeEmu/GBAKeyMask.swift`
 - Modify: `ios/PokeEmu/PokeEmuCoreModule.swift` (replace stub bodies)
 - Create: `android/app/src/main/cpp/CMakeLists.txt`, `android/app/src/main/cpp/mgba_bridge.h`, `android/app/src/main/cpp/mgba_bridge.cpp`
 - Modify: `android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt` (replace stub bodies, add JNI `external fun` declarations)
@@ -1216,7 +1216,7 @@ final class MGBABridge {
     guard let vf = VFileOpen(path, O_RDONLY) else { return nil }
     guard let found = mCoreFindVF(vf) else { return nil }
     core = found
-    guard core!.pointee.init(core) else { return nil }
+    guard core!.pointee.`init`(core) else { return nil }
     guard core!.pointee.loadROM(core, vf) else { return nil }
     core!.pointee.reset(core)
     var width: CUnsignedInt = 0
@@ -1253,7 +1253,7 @@ final class MGBABridge {
 
   func unload() {
     pause()
-    core?.pointee.deinit(core)
+    core?.pointee.`deinit`(core)
     core = nil
   }
 }
@@ -1296,7 +1296,30 @@ class PokeEmuCoreModule: NSObject {
 }
 ```
 
-Add a small `GBAKeyMask.forButtonName(_:) -> UInt32?` helper mapping `"A" -> 0, "B" -> 1, "Select" -> 2, "Start" -> 3, "Right" -> 4, "Left" -> 5, "Up" -> 6, "Down" -> 7, "R" -> 8, "L" -> 9` shifted to bitmasks (`1 << n`) — this matches GBA's standard key-bit ordering used by mGBA's `GBA_KEY_*` enum in `vendor/mgba/include/mgba/gba/interface.h`; confirm the enum order against that header.
+```swift
+// ios/PokeEmu/GBAKeyMask.swift
+import Foundation
+
+enum GBAKeyMask {
+  // Matches the standard GBA key-bit ordering used by mGBA's GBAKey enum
+  // in vendor/mgba/include/mgba/gba/interface.h.
+  static func forButtonName(_ name: String) -> UInt32? {
+    switch name {
+    case "A": return 1 << 0
+    case "B": return 1 << 1
+    case "Select": return 1 << 2
+    case "Start": return 1 << 3
+    case "Right": return 1 << 4
+    case "Left": return 1 << 5
+    case "Up": return 1 << 6
+    case "Down": return 1 << 7
+    case "R": return 1 << 8
+    case "L": return 1 << 9
+    default: return nil
+    }
+  }
+}
+```
 
 - [ ] **Step 4: Android — CMake + JNI bridge**
 
@@ -1332,6 +1355,7 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetButtonSt
 #include <mgba/core/core.h>
 #include <mgba/gba/interface.h>
 #include <atomic>
+#include <string>
 #include <thread>
 
 namespace {
@@ -1371,14 +1395,16 @@ JNIEXPORT jobject JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM(
   unsigned width = 0, height = 0;
   gCore->desiredVideoDimensions(gCore, &width, &height);
 
-  jclass hashMapClass = env->FindClass("java/util/HashMap");
-  jmethodID init = env->GetMethodID(hashMapClass, "<init>", "()V");
-  jmethodID put = env->GetMethodID(hashMapClass, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
-  jobject map = env->NewObject(hashMapClass, init);
-  jclass integerClass = env->FindClass("java/lang/Integer");
-  jmethodID intInit = env->GetMethodID(integerClass, "<init>", "(I)V");
-  env->CallObjectMethod(map, put, env->NewStringUTF("width"), env->NewObject(integerClass, intInit, (jint)width));
-  env->CallObjectMethod(map, put, env->NewStringUTF("height"), env->NewObject(integerClass, intInit, (jint)height));
+  // Must be a real WritableNativeMap (not java.util.HashMap) — the Kotlin
+  // side declares this as WritableMap and hands it straight to
+  // Promise.resolve(), which requires the actual bridge type or throws
+  // ClassCastException at runtime.
+  jclass mapClass = env->FindClass("com/facebook/react/bridge/WritableNativeMap");
+  jmethodID init = env->GetMethodID(mapClass, "<init>", "()V");
+  jmethodID putInt = env->GetMethodID(mapClass, "putInt", "(Ljava/lang/String;I)V");
+  jobject map = env->NewObject(mapClass, init);
+  env->CallVoidMethod(map, putInt, env->NewStringUTF("width"), (jint)width);
+  env->CallVoidMethod(map, putInt, env->NewStringUTF("height"), (jint)height);
   return map;
 }
 
@@ -2423,7 +2449,7 @@ func load(path: String) -> (width: Int, height: Int)? {
   guard let vf = VFileOpen(path, O_RDONLY) else { return nil }
   guard let found = mCoreFindVF(vf) else { return nil }
   core = found
-  guard core!.pointee.init(core) else { return nil }
+  guard core!.pointee.`init`(core) else { return nil }
   guard core!.pointee.loadROM(core, vf) else { return nil }
 
   let savePath = (path as NSString).deletingPathExtension + ".sav"
