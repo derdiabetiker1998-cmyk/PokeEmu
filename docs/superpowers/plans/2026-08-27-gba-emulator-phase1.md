@@ -3511,36 +3511,17 @@ git commit -m "feat: add Settings screen for sound and fast-forward speed"
 - Create: `README.md`
 
 **Interfaces:**
-- Produces: a written record that the full manual QA checklist from the spec has been run, plus instructions for installing the sideloaded build on the user's own devices.
+- Produces: an honest written record of what has and hasn't been verified yet (see the Step 1 correction below — the manual QA checklist could not actually be run in this environment), plus real instructions for getting a build onto a device via EAS.
 
 - [ ] **Step 1: Run the full manual QA checklist from the spec**
 
-Using the user's own legally-owned Pokémon GBA ROM: import it → launch it → save a state to slot 1 → play further → load slot 1 and confirm it reverts → connect a Bluetooth controller and confirm both touch and controller input work → hold fast-forward and confirm speed-up → add a cheat code and confirm its effect → force-quit the app and relaunch, confirming the in-game save persisted.
+**Correction (confirmed 2026-08-27) — this step was NOT executed, and the README does not claim it was.** Running it requires an actual build installed on a physical device. This implementation session ran entirely on a Windows machine with no local Android SDK/NDK/Java and no way to generate a real iOS Xcode project, so no build of either platform has ever been compiled or run — every task's native code was verified by Jest (JS/TS layer) and `npx tsc --noEmit`, and by checking each mGBA/Oboe API call against the real vendored headers, but never by actually running the app. `eas build` was available and configured (Task 1.5) but deliberately not triggered, per the user's explicit choice each time it was offered. The README instead documents this real status honestly and gives the concrete next step (trigger an EAS build, install it, then run this checklist) rather than fabricating a "verified" record.
+
+Using the user's own legally-owned Pokémon GBA ROM, once a real build exists: import it → launch it → save a state to slot 1 → play further → load slot 1 and confirm it reverts → connect a Bluetooth controller and confirm both touch and controller input work → hold fast-forward and confirm speed-up → add a cheat code and confirm its effect → force-quit the app and relaunch, confirming the in-game save persisted → toggle Sound off/on in Settings and confirm it takes effect on the next ROM load.
 
 - [ ] **Step 2: Write `README.md`**
 
-```markdown
-# PokeEmu (Phase 1: GBA)
-
-Personal, offline GBA emulator built on mGBA. Sideload only — not distributed via any app store.
-
-## Running on iOS (sideload via Xcode)
-
-1. `npm install && npx pod-install`
-2. Open `ios/PokeEmu.xcworkspace` in Xcode.
-3. Select your device as the run target, sign with your own Apple ID under Signing & Capabilities.
-4. Build and run (⌘R). The app installs directly on your paired device.
-
-## Running on Android (sideload via APK)
-
-1. `npm install`
-2. `cd android && ./gradlew assembleRelease`
-3. Copy `android/app/build/outputs/apk/release/app-release.apk` to your device and install it (enable "Install unknown apps" for your file manager/browser first).
-
-## Adding ROMs
-
-Use the "Import a ROM" button on the home screen to pick a `.gba` file from your device's storage. Only import ROMs you legally own.
-```
+Write it to reflect the real status above — an honest "Current status" section (Android: code complete, never compiled/run; iOS: staged in `ios-pending/`, blocked on the `ios/` scaffold gap; QA checklist: not run yet) and instructions that route through `eas build` rather than assuming a working local Xcode/Android Studio setup exists on the machine following this plan.
 
 - [ ] **Step 3: Commit**
 
