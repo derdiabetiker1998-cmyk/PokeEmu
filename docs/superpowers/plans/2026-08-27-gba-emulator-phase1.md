@@ -20,6 +20,7 @@
 - Package manager: npm (matches the user's other Expo projects).
 - **Build mechanism:** the development machine is Windows with no local Xcode (impossible on Windows at all) and no local Android SDK/NDK/Java installed. All native builds go through **EAS Build** (configured in Task 1.5) instead of `npx expo run:ios` / `npx expo run:android`. Wherever a later task's manual verification step says to run one of those commands, substitute: trigger an EAS development build for that platform (`eas build --profile development --platform ios` / `--platform android`) and install the resulting build on a physical device via the link EAS prints, then perform the same observation the step describes.
 - **iOS project scaffold gap (confirmed 2026-08-27):** `expo prebuild` cannot generate the `ios/` native project on Windows at all (Expo's own CLI confirms this — macOS or Linux only); WSL is present on this machine but has no Linux distribution installed yet. Decision: proceed with Android + the platform-agnostic JS/TS layer first. iOS-side tasks still get their Swift/Objective-C source files authored as real code, but cannot be wired into an actual Xcode project (`.xcodeproj`/`.xcworkspace`/`Podfile`) until `ios/` exists — that requires either setting up WSL with a Linux distro, or the user running `npx expo prebuild --platform ios` once on a Mac/Linux machine and bringing the generated `ios/` folder back into this repo. Treat every iOS-integration step in Tasks 9–21 as blocked-pending-`ios/`-scaffold until that happens; do not silently skip recording this — flag it again at the point each iOS step would otherwise run.
+- **`@testing-library/react-native` v14 async API (confirmed 2026-08-27):** the installed RTL version (required for React 19 / RN 0.86 — v13 and earlier don't support React 19 at all, since React 19 removed `react-test-renderer` entirely) makes `render`, `rerender`, `unmount`, `renderHook`, `fireEvent` (and its `.press`/`.changeText`/`.scroll` helpers), and `act` all return Promises. Every test in this plan that calls any of those must `await` the call and the enclosing `it(...)` callback must be `async` — e.g. `const { getByText } = await render(<X />)`, `await fireEvent.press(...)`. Calling them without `await` silently returns an unresolved Promise (which destructures to `undefined` fields) rather than throwing, so a missing `await` shows up as `TypeError: getByText is not a function`, not an obvious async-related error.
 
 ---
 
@@ -861,33 +862,33 @@ describe('RomListScreen', () => {
     jest.clearAllMocks();
   });
 
-  it('shows an empty state with an import button when the library is empty', () => {
-    const { getByText } = render(<RomListScreen navigation={{ navigate: jest.fn() } as any} />);
+  it('shows an empty state with an import button when the library is empty', async () => {
+    const { getByText } = await render(<RomListScreen navigation={{ navigate: jest.fn() } as any} />);
     expect(getByText(/import a rom/i)).toBeTruthy();
   });
 
-  it('lists imported roms by title', () => {
+  it('lists imported roms by title', async () => {
     useRomLibraryStore.setState({
       roms: [{ id: '1', title: 'Pokemon - Emerald Version', filePath: '/roms/e.gba', importedAt: 1 }],
     });
-    const { getByText } = render(<RomListScreen navigation={{ navigate: jest.fn() } as any} />);
+    const { getByText } = await render(<RomListScreen navigation={{ navigate: jest.fn() } as any} />);
     expect(getByText('Pokemon - Emerald Version')).toBeTruthy();
   });
 
   it('calls importRom when the import button is pressed', async () => {
     (importRomModule.importRom as jest.Mock).mockResolvedValue(null);
-    const { getByText } = render(<RomListScreen navigation={{ navigate: jest.fn() } as any} />);
-    fireEvent.press(getByText(/import a rom/i));
+    const { getByText } = await render(<RomListScreen navigation={{ navigate: jest.fn() } as any} />);
+    await fireEvent.press(getByText(/import a rom/i));
     await waitFor(() => expect(importRomModule.importRom).toHaveBeenCalled());
   });
 
-  it('navigates to Emulator with the filePath when a row is pressed', () => {
+  it('navigates to Emulator with the filePath when a row is pressed', async () => {
     useRomLibraryStore.setState({
       roms: [{ id: '1', title: 'Emerald', filePath: '/roms/e.gba', importedAt: 1 }],
     });
     const navigate = jest.fn();
-    const { getByText } = render(<RomListScreen navigation={{ navigate } as any} />);
-    fireEvent.press(getByText('Emerald'));
+    const { getByText } = await render(<RomListScreen navigation={{ navigate } as any} />);
+    await fireEvent.press(getByText('Emerald'));
     expect(navigate).toHaveBeenCalledWith('Emulator', { filePath: '/roms/e.gba', romId: '1' });
   });
 });
@@ -1895,21 +1896,21 @@ jest.mock('../native/PokeEmuCore', () => ({ PokeEmuCore: { setButtonState: jest.
 describe('TouchControls', () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it('sends pressed=true on pressIn for the A button', () => {
-    const { getByTestId } = render(<TouchControls />);
-    fireEvent(getByTestId('button-A'), 'pressIn');
+  it('sends pressed=true on pressIn for the A button', async () => {
+    const { getByTestId } = await render(<TouchControls />);
+    await fireEvent(getByTestId('button-A'), 'pressIn');
     expect(PokeEmuCore.setButtonState).toHaveBeenCalledWith('A', true);
   });
 
-  it('sends pressed=false on pressOut for the A button', () => {
-    const { getByTestId } = render(<TouchControls />);
-    fireEvent(getByTestId('button-A'), 'pressOut');
+  it('sends pressed=false on pressOut for the A button', async () => {
+    const { getByTestId } = await render(<TouchControls />);
+    await fireEvent(getByTestId('button-A'), 'pressOut');
     expect(PokeEmuCore.setButtonState).toHaveBeenCalledWith('A', false);
   });
 
-  it('sends Up on pressIn for the d-pad up region', () => {
-    const { getByTestId } = render(<TouchControls />);
-    fireEvent(getByTestId('dpad-Up'), 'pressIn');
+  it('sends Up on pressIn for the d-pad up region', async () => {
+    const { getByTestId } = await render(<TouchControls />);
+    await fireEvent(getByTestId('dpad-Up'), 'pressIn');
     expect(PokeEmuCore.setButtonState).toHaveBeenCalledWith('Up', true);
   });
 });
@@ -2110,9 +2111,11 @@ export function useGamepadStatus(): boolean {
 
 - [ ] **Step 4: Write the test**
 
+**Correction (confirmed 2026-08-27):** `@testing-library/react-hooks` is unmaintained and incompatible with React 19 (its peer dependency caps at React 17). `renderHook` now ships directly from `@testing-library/react-native` (already installed in Task 1) — use that instead, and per the Global Constraints note on RTL v14's async API, `renderHook` and `act` must both be awaited.
+
 ```ts
 // src/controls/useGamepadStatus.test.ts
-import { renderHook, act } from '@testing-library/react-hooks';
+import { renderHook, act } from '@testing-library/react-native';
 import { NativeEventEmitter } from 'react-native';
 import { useGamepadStatus } from './useGamepadStatus';
 
@@ -2122,12 +2125,12 @@ jest.mock('react-native', () => {
 });
 
 describe('useGamepadStatus', () => {
-  it('starts disconnected and flips true when the native event fires', () => {
-    const { result } = renderHook(() => useGamepadStatus());
+  it('starts disconnected and flips true when the native event fires', async () => {
+    const { result } = await renderHook(() => useGamepadStatus());
     expect(result.current).toBe(false);
 
     const emitterInstance = (NativeEventEmitter as unknown as jest.Mock).mock.instances[0];
-    act(() => {
+    await act(() => {
       emitterInstance.emit('controllerStatusChanged', true);
     });
     expect(result.current).toBe(true);
@@ -2135,7 +2138,7 @@ describe('useGamepadStatus', () => {
 });
 ```
 
-Note: this test requires `NativeEventEmitter` to be a real, instantiable emitter under Jest (RN's mock already supports `.emit`); if `@testing-library/react-hooks` isn't installed, run `npm install --save-dev @testing-library/react-hooks` first.
+Note: this test requires `NativeEventEmitter` to be a real, instantiable emitter under Jest (RN's mock already supports `.emit`).
 
 - [ ] **Step 5: Run test to verify it passes**
 
@@ -2537,11 +2540,11 @@ fun setFastForward(enabled: Boolean, speedMultiplier: Double) {
 
 ```tsx
 // src/controls/TouchControls.test.tsx (add)
-it('enables fast-forward at the configured speed on pressIn, disables on pressOut', () => {
-  const { getByTestId } = render(<TouchControls />);
-  fireEvent(getByTestId('button-FastForward'), 'pressIn');
+it('enables fast-forward at the configured speed on pressIn, disables on pressOut', async () => {
+  const { getByTestId } = await render(<TouchControls />);
+  await fireEvent(getByTestId('button-FastForward'), 'pressIn');
   expect(PokeEmuCore.setFastForward).toHaveBeenCalledWith(true, 2);
-  fireEvent(getByTestId('button-FastForward'), 'pressOut');
+  await fireEvent(getByTestId('button-FastForward'), 'pressOut');
   expect(PokeEmuCore.setFastForward).toHaveBeenCalledWith(false, 2);
 });
 ```
