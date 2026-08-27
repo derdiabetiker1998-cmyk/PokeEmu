@@ -37,19 +37,32 @@ class PokeEmuCoreModule: RCTEventEmitter {
   // PokeEmuCoreModule itself an RCTEventEmitter and calling sendEvent
   // directly (no NotificationCenter indirection needed) resolves the
   // mismatch with less code.
+  private func wireGamepad(_ gamepad: GCExtendedGamepad) {
+    gamepad.buttonA.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 0, pressed: pressed) }
+    gamepad.buttonB.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 1, pressed: pressed) }
+    gamepad.buttonMenu.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 3, pressed: pressed) }
+    gamepad.buttonOptions?.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 2, pressed: pressed) }
+    gamepad.leftShoulder.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 9, pressed: pressed) }
+    gamepad.rightShoulder.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 8, pressed: pressed) }
+    gamepad.dpad.up.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 6, pressed: pressed) }
+    gamepad.dpad.down.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 7, pressed: pressed) }
+    gamepad.dpad.left.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 5, pressed: pressed) }
+    gamepad.dpad.right.pressedChangedHandler = { [weak self] _, _, pressed in self?.bridge.setKey(1 << 4, pressed: pressed) }
+  }
+
   private func observeControllers() {
+    // A controller already connected before this module initializes (e.g.
+    // paired before app launch) never fires .GCControllerDidConnect again
+    // for a newly-added observer — wire up any already-connected gamepad
+    // immediately, not just future connections.
+    for controller in GCController.controllers() {
+      if let gamepad = controller.extendedGamepad {
+        wireGamepad(gamepad)
+      }
+    }
     NotificationCenter.default.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] note in
       guard let self = self, let controller = note.object as? GCController, let gamepad = controller.extendedGamepad else { return }
-      gamepad.buttonA.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 0, pressed: pressed) }
-      gamepad.buttonB.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 1, pressed: pressed) }
-      gamepad.buttonMenu.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 3, pressed: pressed) }
-      gamepad.buttonOptions?.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 2, pressed: pressed) }
-      gamepad.leftShoulder.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 9, pressed: pressed) }
-      gamepad.rightShoulder.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 8, pressed: pressed) }
-      gamepad.dpad.up.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 6, pressed: pressed) }
-      gamepad.dpad.down.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 7, pressed: pressed) }
-      gamepad.dpad.left.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 5, pressed: pressed) }
-      gamepad.dpad.right.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 4, pressed: pressed) }
+      self.wireGamepad(gamepad)
       if self.hasListeners { self.sendEvent(withName: "controllerStatusChanged", body: true) }
     }
     NotificationCenter.default.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] _ in
@@ -65,7 +78,7 @@ class PokeEmuCoreModule: RCTEventEmitter {
       return
     }
     let buffer = bridge.attachVideoBuffer(width: dims.width, height: dims.height)
-    PokeEmuRenderView.current?.frameProvider = { (buffer, dims.width, dims.height) }
+    PokeEmuRenderView.setFrameProvider { (buffer, dims.width, dims.height) }
     resolve(["width": dims.width, "height": dims.height])
   }
 
@@ -125,6 +138,17 @@ class PokeEmuCoreModule: RCTEventEmitter {
 
   @objc func setSoundEnabled(_ enabled: Bool) {
     bridge.setSoundEnabled(enabled)
+  }
+
+  // useGamepadStatus() only learns about FUTURE connect/disconnect events
+  // via the controllerStatusChanged listener — a controller already
+  // connected before the hook's useEffect subscribes would otherwise never
+  // be reported. This lets the hook ask for the current state on mount
+  // instead of only waiting for a push (mirrors Android's
+  // isControllerConnected on PokeEmuCoreModule.kt).
+  @objc(isControllerConnected:withRejecter:)
+  func isControllerConnected(resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+    resolve(!GCController.controllers().isEmpty)
   }
 
   @objc static func requiresMainQueueSetup() -> Bool { return false }

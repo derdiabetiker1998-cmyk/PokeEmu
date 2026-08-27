@@ -25,6 +25,11 @@ export const useCheatsStore = create<CheatsState>((set, get) => ({
   codesByRom: loadPersisted(),
   addCode: (romId, code) => {
     const existing = get().codesByRom[romId] ?? [];
+    // The FlatList in CheatsEditorScreen keys rows by `code`, and
+    // setEnabled/removeCode both match by code string, not index — a
+    // duplicate entry would collide on that key and get toggled/removed
+    // together with its twin. De-dupe instead of silently allowing it.
+    if (existing.some((c) => c.code === code)) return;
     const codesByRom = { ...get().codesByRom, [romId]: [...existing, { code, enabled: true }] };
     persist(codesByRom);
     set({ codesByRom });

@@ -18,16 +18,25 @@ export function CheatsEditorScreen() {
       setError('Enter a valid 16-digit GameShark code');
       return;
     }
+    // Apply to the running core first — only reflect it in the store (and
+    // therefore the UI) if the native cheat engine actually accepted it.
+    // Previously this added the code as "enabled" unconditionally, so a
+    // code mGBA's mCheatAddLine rejected would still show as active.
+    const applied = await PokeEmuCore.applyCheat(normalized, true);
+    if (!applied) {
+      setError('The core rejected this code — double-check it.');
+      return;
+    }
     setError(null);
     useCheatsStore.getState().addCode(romId, normalized);
-    await PokeEmuCore.applyCheat(normalized, true);
     setInput('');
   };
 
   const handleToggle = async (code: string, enabled: boolean) => {
     if (!romId) return;
+    const applied = await PokeEmuCore.applyCheat(code, enabled);
+    if (!applied) return;
     useCheatsStore.getState().setEnabled(romId, code, enabled);
-    await PokeEmuCore.applyCheat(code, enabled);
   };
 
   return (

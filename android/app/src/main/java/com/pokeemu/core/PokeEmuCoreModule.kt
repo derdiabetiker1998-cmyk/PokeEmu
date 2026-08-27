@@ -1,5 +1,6 @@
 package com.pokeemu.core
 
+import android.view.InputDevice
 import com.facebook.react.bridge.*
 
 class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
@@ -40,7 +41,7 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
     if (result == null) {
       promise.reject("LOAD_FAILED", "Could not load ROM at $path")
     } else {
-      PokeEmuRenderView.current?.setFrameSize(result.getInt("width"), result.getInt("height"))
+      PokeEmuRenderView.setPendingFrameSize(result.getInt("width"), result.getInt("height"))
       promise.resolve(result)
     }
   }
@@ -82,4 +83,20 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
 
   @ReactMethod
   fun setSoundEnabled(enabled: Boolean) { nativeSetSoundEnabled(enabled) }
+
+  // useGamepadStatus() only learns about FUTURE connect/disconnect events
+  // via the controllerStatusChanged listener — a controller already
+  // connected before the hook's useEffect subscribes (e.g. paired before
+  // app launch, or before the Emulator screen mounts) would otherwise never
+  // be reported, since MainActivity's InputDeviceListener only fires on
+  // devices added/removed *after* it's registered. This lets the hook ask
+  // for the current state on mount instead of only waiting for a push.
+  @ReactMethod
+  fun isControllerConnected(promise: Promise) {
+    val connected = InputDevice.getDeviceIds().any { id ->
+      val device = InputDevice.getDevice(id)
+      device != null && (device.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+    }
+    promise.resolve(connected)
+  }
 }

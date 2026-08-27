@@ -21,4 +21,10 @@ describe('cheatsStore', () => {
     useCheatsStore.getState().removeCode('rom-1', '1A2B3C4D 5E6F7081');
     expect(useCheatsStore.getState().codesByRom['rom-1']).toEqual([]);
   });
+
+  it('does not add the same code twice for a rom', () => {
+    useCheatsStore.getState().addCode('rom-1', '1A2B3C4D 5E6F7081');
+    useCheatsStore.getState().addCode('rom-1', '1A2B3C4D 5E6F7081');
+    expect(useCheatsStore.getState().codesByRom['rom-1']).toHaveLength(1);
+  });
 });

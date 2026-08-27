@@ -5,10 +5,25 @@ import * as DocumentPicker from 'expo-document-picker';
 // '/legacy' is Expo's own transitional subpath that still exports the
 // classic API this module is written against.
 import * as FileSystem from 'expo-file-system/legacy';
+// `Buffer` is a Node global, not something Hermes/React Native provides —
+// Jest passed silently because it runs under Node, but this threw
+// `ReferenceError: Buffer is not defined` on a real device. Import the
+// `buffer` polyfill package explicitly instead of relying on a global.
+import { Buffer } from 'buffer';
 import { useRomLibraryStore, RomEntry } from './romLibrary';
 
 function titleFromFilename(name: string): string {
   return name.replace(/\.gba$/i, '');
+}
+
+// A document provider's returned display name isn't guaranteed to be a bare
+// filename on every OS/content-provider implementation — take only the
+// final path segment and strip any traversal sequences before it's ever
+// concatenated into a destination path, so an adversarial or buggy name
+// can't write outside the sandboxed roms/ directory.
+function sanitizeFileName(name: string): string {
+  const base = name.split(/[/\\]/).pop() ?? name;
+  return base.replace(/\.\./g, '');
 }
 
 async function hasValidGbaHeader(uri: string): Promise<boolean> {
@@ -29,7 +44,8 @@ export async function importRom(): Promise<RomEntry | null | undefined> {
     return undefined;
   }
   const asset = result.assets[0];
-  if (!/\.gba$/i.test(asset.name)) {
+  const safeName = sanitizeFileName(asset.name);
+  if (!/\.gba$/i.test(safeName)) {
     return null;
   }
   if (!(await hasValidGbaHeader(asset.uri))) {
@@ -46,12 +62,12 @@ export async function importRom(): Promise<RomEntry | null | undefined> {
     await FileSystem.makeDirectoryAsync(ROMS_DIR, { intermediates: true });
   }
 
-  const destination = `${ROMS_DIR}${asset.name}`;
+  const destination = `${ROMS_DIR}${safeName}`;
   await FileSystem.copyAsync({ from: asset.uri, to: destination });
 
   const entry: RomEntry = {
     id: destination,
-    title: titleFromFilename(asset.name),
+    title: titleFromFilename(safeName),
     filePath: destination,
     importedAt: Date.now(),
   };

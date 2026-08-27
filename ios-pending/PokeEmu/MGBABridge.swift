@@ -162,6 +162,16 @@ final class MGBABridge {
 
   func unload() {
     pause()
+    // pause() only flips `running` to false — it doesn't wait for the
+    // background run-loop task to notice and actually stop. That task
+    // captured `core` by value and only rechecks `running` once per
+    // outer while-iteration (after finishing its whole fast-forward
+    // batch), so deiniting `core` right after pause() could free memory
+    // the background thread was still mid-`runFrame` on. `queue` is
+    // serial, so this empty `sync` blocks until that task has fully
+    // exited its loop and the queue is idle again, before we free
+    // anything.
+    queue.sync {}
     audioEngine.stop()
     core?.pointee.`deinit`(core)
     core = nil

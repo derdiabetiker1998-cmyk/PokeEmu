@@ -13,6 +13,7 @@ type PokeEmuCoreNative = {
   applyCheat(code: string, enabled: boolean): Promise<boolean>;
   removeAllCheats(): void;
   setSoundEnabled(enabled: boolean): void;
+  isControllerConnected(): Promise<boolean>;
 };
 
 export const PokeEmuCore = NativeModules.PokeEmuCore as PokeEmuCoreNative;

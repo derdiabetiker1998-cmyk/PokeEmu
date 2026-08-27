@@ -30,6 +30,7 @@ export function EmulatorScreen() {
         if (!cancelled) PokeEmuCore.play();
       })
       .catch(() => {
+        if (cancelled) return;
         Alert.alert('Could not start this ROM', 'The core failed to load it.', [
           { text: 'OK', onPress: () => navigation.goBack() },
         ]);

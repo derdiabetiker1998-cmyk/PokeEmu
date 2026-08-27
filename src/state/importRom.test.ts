@@ -75,4 +75,20 @@ describe('importRom', () => {
     const result = await importRom();
     expect(result).not.toBeNull();
   });
+
+  it('sanitizes a picked name containing path separators/traversal before using it as a destination', async () => {
+    const header = Buffer.alloc(192, 0);
+    header.writeUInt8(0x24, 0x04);
+    (DocumentPicker.getDocumentAsync as jest.Mock).mockResolvedValue({
+      canceled: false,
+      assets: [{ uri: 'file:///picked/evil.gba', name: '../../etc/evil.gba' }],
+    });
+    (FileSystem.readAsStringAsync as jest.Mock).mockResolvedValue(header.toString('base64'));
+    const result = await importRom();
+    expect(FileSystem.copyAsync).toHaveBeenCalledWith({
+      from: 'file:///picked/evil.gba',
+      to: '/sandbox/roms/evil.gba',
+    });
+    expect(result?.filePath).toBe('/sandbox/roms/evil.gba');
+  });
 });
