@@ -1,8 +1,11 @@
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+// expo-file-system's default export replaced the classic promise-based API
+// (documentDirectory/copyAsync/etc.) with a new File/Directory/Paths API in
+// SDK 54+; those old names now throw at runtime from the default import.
+// '/legacy' is Expo's own transitional subpath that still exports the
+// classic API this module is written against.
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRomLibraryStore, RomEntry } from './romLibrary';
-
-const ROMS_DIR = `${FileSystem.documentDirectory}roms/`;
 
 function titleFromFilename(name: string): string {
   return name.replace(/\.gba$/i, '');
@@ -17,6 +20,11 @@ export async function importRom(): Promise<RomEntry | null> {
   if (!/\.gba$/i.test(asset.name)) {
     return null;
   }
+
+  if (!FileSystem.documentDirectory) {
+    throw new Error('expo-file-system: documentDirectory is unavailable on this platform');
+  }
+  const ROMS_DIR = `${FileSystem.documentDirectory}roms/`;
 
   const dirInfo = await FileSystem.getInfoAsync(ROMS_DIR);
   if (!dirInfo.exists) {

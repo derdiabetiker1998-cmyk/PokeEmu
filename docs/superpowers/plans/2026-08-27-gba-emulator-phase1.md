@@ -21,6 +21,7 @@
 - **Build mechanism:** the development machine is Windows with no local Xcode (impossible on Windows at all) and no local Android SDK/NDK/Java installed. All native builds go through **EAS Build** (configured in Task 1.5) instead of `npx expo run:ios` / `npx expo run:android`. Wherever a later task's manual verification step says to run one of those commands, substitute: trigger an EAS development build for that platform (`eas build --profile development --platform ios` / `--platform android`) and install the resulting build on a physical device via the link EAS prints, then perform the same observation the step describes.
 - **iOS project scaffold gap (confirmed 2026-08-27):** `expo prebuild` cannot generate the `ios/` native project on Windows at all (Expo's own CLI confirms this — macOS or Linux only); WSL is present on this machine but has no Linux distribution installed yet. Decision: proceed with Android + the platform-agnostic JS/TS layer first. iOS-side tasks still get their Swift/Objective-C source files authored as real code, but cannot be wired into an actual Xcode project (`.xcodeproj`/`.xcworkspace`/`Podfile`) until `ios/` exists — that requires either setting up WSL with a Linux distro, or the user running `npx expo prebuild --platform ios` once on a Mac/Linux machine and bringing the generated `ios/` folder back into this repo. Treat every iOS-integration step in Tasks 9–21 as blocked-pending-`ios/`-scaffold until that happens; do not silently skip recording this — flag it again at the point each iOS step would otherwise run.
 - **`@testing-library/react-native` v14 async API (confirmed 2026-08-27):** the installed RTL version (required for React 19 / RN 0.86 — v13 and earlier don't support React 19 at all, since React 19 removed `react-test-renderer` entirely) makes `render`, `rerender`, `unmount`, `renderHook`, `fireEvent` (and its `.press`/`.changeText`/`.scroll` helpers), and `act` all return Promises. Every test in this plan that calls any of those must `await` the call and the enclosing `it(...)` callback must be `async` — e.g. `const { getByText } = await render(<X />)`, `await fireEvent.press(...)`. Calling them without `await` silently returns an unresolved Promise (which destructures to `undefined` fields) rather than throwing, so a missing `await` shows up as `TypeError: getByText is not a function`, not an obvious async-related error.
+- **Dependency API drift caught by `tsc --noEmit` (confirmed 2026-08-27):** Jest/Babel strips TypeScript types without checking them, so it does not catch these — run `npx tsc --noEmit` periodically (tsconfig excludes `vendor/`, `ios-pending/`, `android/`, `ios/`) to catch drift like this early. Two real ones found in this project's installed versions: (1) `react-native-mmkv` is v4 (Nitro-Modules-based) and exports `MMKV` as a type only — use `createMMKV({ id })`, not `new MMKV({ id })`; the mock at `__mocks__/react-native-mmkv.js` exports `createMMKV` accordingly. (2) `expo-file-system`'s default export replaced the classic `documentDirectory`/`copyAsync`/etc. API with a new `File`/`Directory`/`Paths` API — those old names still exist on the default import but throw at runtime; import from `expo-file-system/legacy` instead wherever this plan uses the classic API.
 
 ---
 
@@ -419,9 +420,9 @@ Expected: FAIL with "Cannot find module './romLibrary'"
 ```ts
 // src/state/romLibrary.ts
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 
-const storage = new MMKV({ id: 'pokeemu-rom-library' });
+const storage = createMMKV({ id: 'pokeemu-rom-library' });
 const STORAGE_KEY = 'roms';
 
 export type RomEntry = {
@@ -468,7 +469,9 @@ export const useRomLibraryStore = create<RomLibraryState>((set, get) => ({
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `npx jest src/state/romLibrary.test.ts`
-Expected: PASS (5 tests). Note: MMKV's native module isn't available under plain `jest-expo` — if the run fails on `new MMKV(...)`, add a `jest.mock('react-native-mmkv', ...)` at the top of the test file backed by a simple in-memory `Map`, then re-run.
+Expected: PASS (5 tests). Note: MMKV's native module isn't available under plain `jest-expo` — if the run fails inside `createMMKV(...)` (e.g. "NitroModules could not be found"), add a manual mock at `__mocks__/react-native-mmkv.js` (repo root, adjacent to `node_modules`) exporting a `createMMKV({ id })` function backed by a simple in-memory `Map` per `id` — Jest auto-applies root-level `__mocks__/<package>.js` files for node_modules packages without needing an explicit `jest.mock()` call in each test file — then re-run.
+
+**Correction (confirmed 2026-08-27):** the installed `react-native-mmkv` (v4, Nitro-Modules-based) exports `MMKV` as a type only — construction is `createMMKV({ id })`, not `new MMKV({ id })`. `.getString(key)`/`.set(key, value)` instance methods are unchanged. This plan uses `createMMKV` throughout; if a future install pulls an older v2/v3 MMKV, revert to `new MMKV(...)`.
 
 - [ ] **Step 5: Commit**
 
@@ -559,10 +562,10 @@ export enum GBAButton {
 ```ts
 // src/state/settings.ts
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 import { GBAButton } from '../native/buttons';
 
-const storage = new MMKV({ id: 'pokeemu-settings' });
+const storage = createMMKV({ id: 'pokeemu-settings' });
 const STORAGE_KEY = 'settings';
 
 type SettingsState = {
@@ -718,12 +721,12 @@ git commit -m "feat: add GameShark cheat code parser with validation"
 ```ts
 // src/state/importRom.test.ts
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { importRom } from './importRom';
 import { useRomLibraryStore } from './romLibrary';
 
 jest.mock('expo-document-picker');
-jest.mock('expo-file-system', () => ({
+jest.mock('expo-file-system/legacy', () => ({
   documentDirectory: '/sandbox/',
   makeDirectoryAsync: jest.fn(),
   copyAsync: jest.fn(),
@@ -779,13 +782,13 @@ Expected: FAIL with "Cannot find module './importRom'"
 
 - [ ] **Step 3: Write the implementation**
 
+**Correction (confirmed 2026-08-27):** the installed `expo-file-system`'s default export replaced the classic promise-based API (`documentDirectory`, `copyAsync`, `getInfoAsync`, `makeDirectoryAsync`, `readAsStringAsync`) with a new `File`/`Directory`/`Paths`-based API in SDK 54+ — the old names still exist on the default import but throw at runtime. `expo-file-system/legacy` is Expo's own transitional subpath re-exporting the classic API this task is written against; import from there instead. `documentDirectory` is also typed `string | null` there, so guard it before use — and do that guard *inside* `importRom()`, not at module scope, so files that merely import this module (like `RomListScreen.tsx`) don't crash under Jest, where `documentDirectory` resolves to `null` with no native module bound.
+
 ```ts
 // src/state/importRom.ts
 import * as DocumentPicker from 'expo-document-picker';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useRomLibraryStore, RomEntry } from './romLibrary';
-
-const ROMS_DIR = `${FileSystem.documentDirectory}roms/`;
 
 function titleFromFilename(name: string): string {
   return name.replace(/\.gba$/i, '');
@@ -800,6 +803,11 @@ export async function importRom(): Promise<RomEntry | null> {
   if (!/\.gba$/i.test(asset.name)) {
     return null;
   }
+
+  if (!FileSystem.documentDirectory) {
+    throw new Error('expo-file-system: documentDirectory is unavailable on this platform');
+  }
+  const ROMS_DIR = `${FileSystem.documentDirectory}roms/`;
 
   const dirInfo = await FileSystem.getInfoAsync(ROMS_DIR);
   if (!dirInfo.exists) {
@@ -2880,9 +2888,9 @@ Expected: FAIL with "Cannot find module './cheatsStore'"
 ```ts
 // src/state/cheatsStore.ts
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 
-const storage = new MMKV({ id: 'pokeemu-cheats' });
+const storage = createMMKV({ id: 'pokeemu-cheats' });
 const STORAGE_KEY = 'codesByRom';
 
 type CheatCode = { code: string; enabled: boolean };

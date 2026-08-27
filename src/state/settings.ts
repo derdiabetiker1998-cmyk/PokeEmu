@@ -1,8 +1,8 @@
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 import { GBAButton } from '../native/buttons';
 
-const storage = new MMKV({ id: 'pokeemu-settings' });
+const storage = createMMKV({ id: 'pokeemu-settings' });
 const STORAGE_KEY = 'settings';
 
 type SettingsState = {

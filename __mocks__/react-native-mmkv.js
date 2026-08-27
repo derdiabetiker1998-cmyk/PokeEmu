@@ -1,20 +1,15 @@
 const stores = new Map();
 
-class MMKV {
-  constructor({ id } = { id: 'default' }) {
-    this.id = id;
-    if (!stores.has(id)) {
-      stores.set(id, new Map());
-    }
+function createMMKV({ id } = { id: 'default' }) {
+  if (!stores.has(id)) {
+    stores.set(id, new Map());
   }
-
-  getString(key) {
-    return stores.get(this.id).get(key);
-  }
-
-  set(key, value) {
-    stores.get(this.id).set(key, value);
-  }
+  const store = stores.get(id);
+  return {
+    id,
+    getString: (key) => store.get(key),
+    set: (key, value) => store.set(key, value),
+  };
 }
 
-module.exports = { MMKV };
+module.exports = { createMMKV };

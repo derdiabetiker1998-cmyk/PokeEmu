@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import { MMKV } from 'react-native-mmkv';
+import { createMMKV } from 'react-native-mmkv';
 
-const storage = new MMKV({ id: 'pokeemu-rom-library' });
+const storage = createMMKV({ id: 'pokeemu-rom-library' });
 const STORAGE_KEY = 'roms';
 
 export type RomEntry = {
