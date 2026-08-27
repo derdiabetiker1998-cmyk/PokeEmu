@@ -85,14 +85,31 @@ class PokeEmuCoreModule: RCTEventEmitter {
 
   @objc func setFastForward(_ enabled: Bool, speedMultiplier: Double) {}
 
+  private func stateFilePath(romId: String, slot: Int) -> String {
+    let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    let dir = docs.appendingPathComponent("saves").appendingPathComponent(romId)
+    try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    return dir.appendingPathComponent("state-slot-\(slot).state").path
+  }
+
   @objc(saveState:slotIndex:withResolver:withRejecter:)
   func saveState(romId: String, slotIndex: NSNumber, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    resolve(nil)
+    let path = stateFilePath(romId: romId, slot: slotIndex.intValue)
+    if bridge.saveState(toPath: path) {
+      resolve(nil)
+    } else {
+      reject("SAVE_STATE_FAILED", "Could not save state to slot \(slotIndex)", nil)
+    }
   }
 
   @objc(loadState:slotIndex:withResolver:withRejecter:)
   func loadState(romId: String, slotIndex: NSNumber, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    resolve(nil)
+    let path = stateFilePath(romId: romId, slot: slotIndex.intValue)
+    if bridge.loadState(fromPath: path) {
+      resolve(nil)
+    } else {
+      reject("LOAD_STATE_FAILED", "Could not load state from slot \(slotIndex)", nil)
+    }
   }
 
   @objc(applyCheat:enabled:withResolver:withRejecter:)

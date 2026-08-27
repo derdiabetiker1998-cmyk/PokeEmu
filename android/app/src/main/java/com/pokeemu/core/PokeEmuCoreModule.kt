@@ -19,6 +19,14 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
   private external fun nativePlay()
   private external fun nativePause()
   private external fun nativeSetButtonState(button: String, pressed: Boolean)
+  private external fun nativeSaveState(path: String): Boolean
+  private external fun nativeLoadState(path: String): Boolean
+
+  private fun stateFilePath(romId: String, slot: Int): String {
+    val dir = java.io.File(reactApplicationContext.filesDir, "saves/$romId")
+    dir.mkdirs()
+    return java.io.File(dir, "state-slot-$slot.state").absolutePath
+  }
 
   override fun getName() = "PokeEmuCore"
 
@@ -49,10 +57,16 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
   fun setFastForward(enabled: Boolean, speedMultiplier: Double) {}
 
   @ReactMethod
-  fun saveState(romId: String, slotIndex: Int, promise: Promise) { promise.resolve(null) }
+  fun saveState(romId: String, slotIndex: Int, promise: Promise) {
+    if (nativeSaveState(stateFilePath(romId, slotIndex))) promise.resolve(null)
+    else promise.reject("SAVE_STATE_FAILED", "Could not save state to slot $slotIndex")
+  }
 
   @ReactMethod
-  fun loadState(romId: String, slotIndex: Int, promise: Promise) { promise.resolve(null) }
+  fun loadState(romId: String, slotIndex: Int, promise: Promise) {
+    if (nativeLoadState(stateFilePath(romId, slotIndex))) promise.resolve(null)
+    else promise.reject("LOAD_STATE_FAILED", "Could not load state from slot $slotIndex")
+  }
 
   @ReactMethod
   fun applyCheat(code: String, enabled: Boolean, promise: Promise) { promise.resolve(true) }

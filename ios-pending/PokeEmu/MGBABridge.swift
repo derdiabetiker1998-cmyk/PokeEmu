@@ -95,6 +95,16 @@ final class MGBABridge {
     running = false
   }
 
+  func saveState(toPath path: String) -> Bool {
+    guard let core = core, let vf = VFileOpen(path, O_WRONLY | O_CREAT | O_TRUNC) else { return false }
+    return mCoreSaveStateNamed(core, vf, Int32(SAVESTATE_ALL))
+  }
+
+  func loadState(fromPath path: String) -> Bool {
+    guard let core = core, let vf = VFileOpen(path, O_RDONLY) else { return false }
+    return mCoreLoadStateNamed(core, vf, Int32(SAVESTATE_ALL))
+  }
+
   func setKey(_ mask: UInt32, pressed: Bool) {
     guard let core = core else { return }
     if pressed {

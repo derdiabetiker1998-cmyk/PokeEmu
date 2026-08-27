@@ -1,5 +1,6 @@
 #include "mgba_bridge.h"
 #include <mgba/core/core.h>
+#include <mgba/core/serialize.h>
 #include <mgba/gba/interface.h>
 #include <android/bitmap.h>
 #include <oboe/Oboe.h>
@@ -120,6 +121,24 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetButtonSt
   env->ReleaseStringUTFChars(jbutton, name);
   if (pressed) gCore->addKeys(gCore, mask);
   else gCore->clearKeys(gCore, mask);
+}
+
+JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSaveState(JNIEnv* env, jobject, jstring jpath) {
+  if (!gCore) return JNI_FALSE;
+  const char* path = env->GetStringUTFChars(jpath, nullptr);
+  struct VFile* vf = VFileOpen(path, O_WRONLY | O_CREAT | O_TRUNC);
+  env->ReleaseStringUTFChars(jpath, path);
+  if (!vf) return JNI_FALSE;
+  return mCoreSaveStateNamed(gCore, vf, SAVESTATE_ALL) ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadState(JNIEnv* env, jobject, jstring jpath) {
+  if (!gCore) return JNI_FALSE;
+  const char* path = env->GetStringUTFChars(jpath, nullptr);
+  struct VFile* vf = VFileOpen(path, O_RDONLY);
+  env->ReleaseStringUTFChars(jpath, path);
+  if (!vf) return JNI_FALSE;
+  return mCoreLoadStateNamed(gCore, vf, SAVESTATE_ALL) ? JNI_TRUE : JNI_FALSE;
 }
 
 // mGBA's 32-bit color_t stores R,G,B,A one byte each (see
