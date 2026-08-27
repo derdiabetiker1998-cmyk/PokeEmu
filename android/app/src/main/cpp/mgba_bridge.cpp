@@ -1,14 +1,18 @@
 #include "mgba_bridge.h"
 #include <mgba/core/core.h>
 #include <mgba/gba/interface.h>
+#include <android/bitmap.h>
 #include <atomic>
+#include <cstring>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 mCore* gCore = nullptr;
 std::atomic<bool> gRunning{false};
 std::thread gRunThread;
+std::vector<uint32_t> gVideoBuffer;
 
 uint32_t keyMaskForName(const std::string& name) {
   if (name == "A") return 1u << 0;
@@ -41,6 +45,9 @@ JNIEXPORT jobject JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM(
 
   unsigned width = 0, height = 0;
   gCore->desiredVideoDimensions(gCore, &width, &height);
+
+  gVideoBuffer.assign(static_cast<size_t>(width) * height, 0);
+  gCore->setVideoBuffer(gCore, gVideoBuffer.data(), width);
 
   // Must be a real WritableNativeMap (not java.util.HashMap) — the Kotlin
   // side declares this as WritableMap and hands it straight to
@@ -77,4 +84,17 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetButtonSt
   env->ReleaseStringUTFChars(jbutton, name);
   if (pressed) gCore->addKeys(gCore, mask);
   else gCore->clearKeys(gCore, mask);
+}
+
+// mGBA's 32-bit color_t stores R,G,B,A one byte each (see
+// vendor/mgba/include/mgba/core/interface.h's M_COLOR_* masks), which is
+// the same in-memory byte order as Android's ANDROID_BITMAP_FORMAT_RGBA_8888
+// (i.e. Bitmap.Config.ARGB_8888) — a straight memcpy is correct, no channel
+// swizzling needed.
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuRenderView_nativeCopyFrameInto(JNIEnv* env, jobject, jobject bitmap) {
+  if (gVideoBuffer.empty()) return;
+  void* pixels = nullptr;
+  if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return;
+  std::memcpy(pixels, gVideoBuffer.data(), gVideoBuffer.size() * sizeof(uint32_t));
+  AndroidBitmap_unlockPixels(env, bitmap);
 }

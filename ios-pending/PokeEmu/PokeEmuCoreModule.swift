@@ -10,6 +10,8 @@ class PokeEmuCoreModule: NSObject {
       reject("LOAD_FAILED", "Could not load ROM at \(path)", nil)
       return
     }
+    let buffer = bridge.attachVideoBuffer(width: dims.width, height: dims.height)
+    PokeEmuRenderView.current?.frameProvider = { (buffer, dims.width, dims.height) }
     resolve(["width": dims.width, "height": dims.height])
   }
 

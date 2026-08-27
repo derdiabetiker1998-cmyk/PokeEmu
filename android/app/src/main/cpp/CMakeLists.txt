@@ -6,4 +6,4 @@ add_subdirectory(${MGBA_DIR} mgba_build)
 
 add_library(pokeemu_bridge SHARED mgba_bridge.cpp)
 target_include_directories(pokeemu_bridge PRIVATE ${MGBA_DIR}/include)
-target_link_libraries(pokeemu_bridge mgba log android)
+target_link_libraries(pokeemu_bridge mgba log android jnigraphics)

@@ -20,6 +20,7 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
     if (result == null) {
       promise.reject("LOAD_FAILED", "Could not load ROM at $path")
     } else {
+      PokeEmuRenderView.current?.setFrameSize(result.getInt("width"), result.getInt("height"))
       promise.resolve(result)
     }
   }

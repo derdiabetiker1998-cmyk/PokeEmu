@@ -5,6 +5,16 @@ final class MGBABridge {
   private var core: UnsafeMutablePointer<mCore>?
   private var running = false
   private let queue = DispatchQueue(label: "com.pokeemu.core.runloop")
+  private var videoBuffer: UnsafeMutablePointer<UInt32>?
+
+  func attachVideoBuffer(width: Int, height: Int) -> UnsafeMutablePointer<UInt32> {
+    videoBuffer?.deallocate()
+    let buffer = UnsafeMutablePointer<UInt32>.allocate(capacity: width * height)
+    buffer.initialize(repeating: 0, count: width * height)
+    core?.pointee.setVideoBuffer(core, buffer, width)
+    videoBuffer = buffer
+    return buffer
+  }
 
   func load(path: String) -> (width: Int, height: Int)? {
     guard let vf = VFileOpen(path, O_RDONLY) else { return nil }
@@ -49,5 +59,7 @@ final class MGBABridge {
     pause()
     core?.pointee.`deinit`(core)
     core = nil
+    videoBuffer?.deallocate()
+    videoBuffer = nil
   }
 }

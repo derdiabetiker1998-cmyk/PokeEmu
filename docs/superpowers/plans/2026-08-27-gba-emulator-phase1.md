@@ -1518,12 +1518,17 @@ git commit -m "feat: wire real mGBA core loading and run loop on iOS and Android
 - Create: `ios/PokeEmu/PokeEmuRenderView.swift`, `ios/PokeEmu/PokeEmuRenderViewManager.swift`, `ios/PokeEmu/PokeEmuRenderViewManager.m`
 - Create: `android/app/src/main/java/com/pokeemu/core/PokeEmuRenderView.kt`, `android/app/src/main/java/com/pokeemu/core/PokeEmuRenderViewManager.kt`
 - Modify: `android/app/src/main/java/com/pokeemu/core/PokeEmuCorePackage.kt` (register the view manager)
-- Modify: `ios/PokeEmu/MGBABridge.swift` (expose the framebuffer pointer to the render view)
+- Modify: `ios/PokeEmu/MGBABridge.swift` (expose the framebuffer pointer to the render view, free it on unload)
+- Modify: `ios/PokeEmu/PokeEmuCoreModule.swift` (wire the buffer into the current render view after load)
+- Modify: `android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt` (size the current render view after load)
+- Modify: `android/app/src/main/cpp/mgba_bridge.cpp`, `android/app/src/main/cpp/mgba_bridge.h`, `android/app/src/main/cpp/CMakeLists.txt` (allocate the shared frame buffer, add the bitmap-copy JNI export, link `jnigraphics`)
 - Create: `src/native/PokeEmuRenderView.tsx`
 
 **Interfaces:**
 - Produces: `<PokeEmuRenderView style={...} />` RN component that displays the running core's framebuffer.
 - Consumed by: Task 12 (EmulatorScreen).
+
+**Correction (confirmed 2026-08-27):** the original draft of this task left "wire the buffer/size into the view" as prose ("via a shared singleton reference") without writing the actual mechanism, which is a real functional gap — nothing would ever call `setFrameSize`/set `frameProvider`, so the view would never draw anything. Both platforms below use an explicit shared-instance reference (`PokeEmuRenderView.current`) that the currently-attached view registers itself under, so `PokeEmuCoreModule` has something concrete to reach after a ROM loads. Also fixed: the iOS video buffer is otherwise leaked on every ROM load (a fresh `UnsafeMutablePointer` was allocated with no `deallocate()` of the previous one) — `attachVideoBuffer` and `unload()` below free it.
 
 - [ ] **Step 1: iOS — expose the framebuffer from the bridge**
 
@@ -1532,14 +1537,25 @@ git commit -m "feat: wire real mGBA core loading and run loop on iOS and Android
 private var videoBuffer: UnsafeMutablePointer<UInt32>?
 
 func attachVideoBuffer(width: Int, height: Int) -> UnsafeMutablePointer<UInt32> {
+  videoBuffer?.deallocate()
   let buffer = UnsafeMutablePointer<UInt32>.allocate(capacity: width * height)
+  buffer.initialize(repeating: 0, count: width * height)
   core?.pointee.setVideoBuffer(core, buffer, width)
   videoBuffer = buffer
   return buffer
 }
 ```
 
-Call `bridge.attachVideoBuffer(width:height:)` right after a successful `load(path:)` in `PokeEmuCoreModule.loadROM`, storing the returned pointer so `PokeEmuRenderView` can read from it every display frame.
+```swift
+// ios/PokeEmu/MGBABridge.swift (modify unload() to also free the buffer)
+func unload() {
+  pause()
+  core?.pointee.`deinit`(core)
+  core = nil
+  videoBuffer?.deallocate()
+  videoBuffer = nil
+}
+```
 
 - [ ] **Step 2: iOS — render view drawing the buffer via a `CADisplayLink`**
 
@@ -1548,6 +1564,12 @@ Call `bridge.attachVideoBuffer(width:height:)` right after a successful `load(pa
 import UIKit
 
 class PokeEmuRenderView: UIView {
+  // PokeEmuCoreModule only learns the ROM's video buffer/dimensions after
+  // MGBABridge.load(path:) returns, and it has no other handle to whichever
+  // PokeEmuRenderView the JS side has mounted — this shared reference is
+  // how it reaches the currently-attached view to set its frameProvider.
+  static weak var current: PokeEmuRenderView?
+
   var frameProvider: (() -> (UnsafeMutablePointer<UInt32>, Int, Int)?)?
   private var displayLink: CADisplayLink?
 
@@ -1558,6 +1580,15 @@ class PokeEmuRenderView: UIView {
     displayLink?.add(to: .main, forMode: .common)
   }
   required init?(coder: NSCoder) { fatalError("not supported") }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    if window != nil {
+      PokeEmuRenderView.current = self
+    } else if PokeEmuRenderView.current === self {
+      PokeEmuRenderView.current = nil
+    }
+  }
 
   @objc private func tick() {
     guard let (buffer, width, height) = frameProvider?() else { return }
@@ -1588,7 +1619,19 @@ class PokeEmuRenderViewManager: RCTViewManager {
 @end
 ```
 
-Wire `frameProvider` on the `PokeEmuRenderView` instance from `PokeEmuCoreModule` (e.g. via a shared singleton reference set when the module loads a ROM) so the view pulls the live buffer pointer plus current width/height each tick.
+```swift
+// ios/PokeEmu/PokeEmuCoreModule.swift (modify loadROM to wire the buffer into the current view)
+@objc(loadROM:withResolver:withRejecter:)
+func loadROM(path: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
+  guard let dims = bridge.load(path: path) else {
+    reject("LOAD_FAILED", "Could not load ROM at \(path)", nil)
+    return
+  }
+  let buffer = bridge.attachVideoBuffer(width: dims.width, height: dims.height)
+  PokeEmuRenderView.current?.frameProvider = { (buffer, dims.width, dims.height) }
+  resolve(["width": dims.width, "height": dims.height])
+}
+```
 
 - [ ] **Step 3: Android — render view drawing the buffer onto a `SurfaceView`**
 
@@ -1604,9 +1647,25 @@ import android.view.SurfaceView
 import android.view.Choreographer
 
 class PokeEmuRenderView(context: Context) : SurfaceView(context), SurfaceHolder.Callback, Choreographer.FrameCallback {
+  companion object {
+    // Same shared-reference need as PokeEmuRenderView.current on iOS: this
+    // is how PokeEmuCoreModule.loadROM reaches the mounted view to size it.
+    var current: PokeEmuRenderView? = null
+  }
+
   private var bitmap: Bitmap? = null
 
   init { holder.addCallback(this) }
+
+  override fun onAttachedToWindow() {
+    super.onAttachedToWindow()
+    current = this
+  }
+
+  override fun onDetachedFromWindow() {
+    super.onDetachedFromWindow()
+    if (current === this) current = null
+  }
 
   fun setFrameSize(width: Int, height: Int) {
     bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -1632,7 +1691,49 @@ class PokeEmuRenderView(context: Context) : SurfaceView(context), SurfaceHolder.
 }
 ```
 
-Add `nativeCopyFrameInto` to `mgba_bridge.cpp` (mirrors `nativeLoadROM`'s JNI pattern): it locks the `Bitmap`'s pixels with `AndroidBitmap_lockPixels`, `memcpy`s from the core's video buffer, then `AndroidBitmap_unlockPixels`.
+```kotlin
+// android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt (modify loadROM to size the current view)
+@ReactMethod
+fun loadROM(path: String, promise: Promise) {
+  val result = nativeLoadROM(path)
+  if (result == null) {
+    promise.reject("LOAD_FAILED", "Could not load ROM at $path")
+  } else {
+    PokeEmuRenderView.current?.setFrameSize(result.getInt("width"), result.getInt("height"))
+    promise.resolve(result)
+  }
+}
+```
+
+```cpp
+// android/app/src/main/cpp/mgba_bridge.cpp (add: allocate the shared frame
+// buffer in nativeLoadROM, right after computing width/height, and the
+// JNI export that copies it into the Bitmap each frame)
+#include <android/bitmap.h>
+#include <cstring>
+#include <vector>
+
+namespace { std::vector<uint32_t> gVideoBuffer; }
+
+// (inside Java_..._nativeLoadROM, after desiredVideoDimensions:)
+gVideoBuffer.assign(static_cast<size_t>(width) * height, 0);
+gCore->setVideoBuffer(gCore, gVideoBuffer.data(), width);
+
+// mGBA's 32-bit color_t stores R,G,B,A one byte each (see
+// vendor/mgba/include/mgba/core/interface.h's M_COLOR_* masks), which is
+// the same in-memory byte order as Android's ANDROID_BITMAP_FORMAT_RGBA_8888
+// (i.e. Bitmap.Config.ARGB_8888) — a straight memcpy is correct, no channel
+// swizzling needed.
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuRenderView_nativeCopyFrameInto(JNIEnv* env, jobject, jobject bitmap) {
+  if (gVideoBuffer.empty()) return;
+  void* pixels = nullptr;
+  if (AndroidBitmap_lockPixels(env, bitmap, &pixels) != ANDROID_BITMAP_RESULT_SUCCESS) return;
+  std::memcpy(pixels, gVideoBuffer.data(), gVideoBuffer.size() * sizeof(uint32_t));
+  AndroidBitmap_unlockPixels(env, bitmap);
+}
+```
+
+Add the matching declaration to `mgba_bridge.h`, and link `jnigraphics` in `CMakeLists.txt`'s `target_link_libraries` line (needed for `AndroidBitmap_lockPixels`/`unlockPixels`).
 
 ```kotlin
 // android/app/src/main/java/com/pokeemu/core/PokeEmuRenderViewManager.kt

@@ -10,5 +10,5 @@ class PokeEmuCorePackage : ReactPackage {
     listOf(PokeEmuCoreModule(reactContext))
 
   override fun createViewManagers(reactContext: ReactApplicationContext): List<ViewManager<*, *>> =
-    emptyList()
+    listOf(PokeEmuRenderViewManager())
 }
