@@ -21,6 +21,12 @@
     },
     "web": {
       "favicon": "./assets/favicon.png"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "a91cca82-19e5-4569-a3f3-f3db69efaa33"
+      }
+    },
+    "owner": "impoxx"
   }
 }
