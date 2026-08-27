@@ -12,4 +12,5 @@ JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadSta
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetFastForward(JNIEnv*, jobject, jboolean enabled, jdouble speedMultiplier);
 JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeApplyCheat(JNIEnv*, jobject, jstring code, jboolean enabled);
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeRemoveAllCheats(JNIEnv*, jobject);
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetSoundEnabled(JNIEnv*, jobject, jboolean enabled);
 }

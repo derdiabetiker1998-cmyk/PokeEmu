@@ -7,6 +7,7 @@ import { PokeEmuRenderView } from '../native/PokeEmuRenderView';
 import { TouchControls } from '../controls/TouchControls';
 import { useGamepadStatus } from '../controls/useGamepadStatus';
 import { useSessionStore } from '../state/session';
+import { useSettingsStore } from '../state/settings';
 import { SaveStateSheet } from './SaveStateSheet';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { theme } from '../theme/tokens';
@@ -25,6 +26,7 @@ export function EmulatorScreen() {
     useSessionStore.getState().setActiveRomId(route.params.romId);
     PokeEmuCore.loadROM(route.params.filePath)
       .then(() => {
+        PokeEmuCore.setSoundEnabled(useSettingsStore.getState().soundEnabled);
         if (!cancelled) PokeEmuCore.play();
       })
       .catch(() => {

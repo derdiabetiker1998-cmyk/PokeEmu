@@ -4,11 +4,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { RomListScreen } from '../screens/RomListScreen';
 import { EmulatorScreen } from '../screens/EmulatorScreen';
 import { CheatsEditorScreen } from '../screens/CheatsEditorScreen';
+import { SettingsScreen } from '../screens/SettingsScreen';
 
 export type RootStackParamList = {
   RomList: undefined;
   Emulator: { filePath: string; romId: string };
   CheatsEditor: undefined;
+  Settings: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -20,6 +22,7 @@ export function RootNavigator() {
         <Stack.Screen name="RomList" component={RomListScreen} options={{ title: 'PokeEmu' }} />
         <Stack.Screen name="Emulator" component={EmulatorScreen} options={{ title: '' }} />
         <Stack.Screen name="CheatsEditor" component={CheatsEditorScreen} options={{ title: 'Cheats' }} />
+        <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );

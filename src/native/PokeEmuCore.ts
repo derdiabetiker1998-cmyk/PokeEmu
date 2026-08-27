@@ -12,6 +12,7 @@ type PokeEmuCoreNative = {
   loadState(romId: string, slotIndex: number): Promise<void>;
   applyCheat(code: string, enabled: boolean): Promise<boolean>;
   removeAllCheats(): void;
+  setSoundEnabled(enabled: boolean): void;
 };
 
 export const PokeEmuCore = NativeModules.PokeEmuCore as PokeEmuCoreNative;

@@ -3364,6 +3364,7 @@ git commit -m "feat: add error handling for invalid ROMs, failed states, and con
 - Create: `src/screens/SettingsScreen.tsx`
 - Modify: `src/navigation/RootNavigator.tsx` (add the `Settings` route)
 - Modify: `src/screens/RomListScreen.tsx` (add a settings entry point)
+- Modify: `src/native/PokeEmuCore.ts` (add `setSoundEnabled`), `ios/PokeEmu/MGBABridge.swift`, `ios/PokeEmu/PokeEmuCoreModule.swift`, `ios/PokeEmu/PokeEmuCoreModule.m`, `android/app/src/main/cpp/mgba_bridge.cpp`, `android/app/src/main/cpp/mgba_bridge.h`, `android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt`, `src/screens/EmulatorScreen.tsx` (wire the Sound switch to something real — see Step 2's correction note)
 
 **Interfaces:**
 - Consumes: `useSettingsStore` (Task 5).
@@ -3424,14 +3425,76 @@ const styles = StyleSheet.create({
 ```
 
 ```tsx
-// src/screens/RomListScreen.tsx (modify — add a header-right button)
-// In the Props type, widen navigation.navigate to also accept 'Settings' with no params.
-// Add a Pressable in the header area (or via navigation.setOptions in a useEffect) labeled "Settings" navigating to it.
+// src/screens/RomListScreen.tsx (modify — add a settings entry point)
+// In the Props type, widen navigation.navigate to an overload that also accepts 'Settings' with no params.
+// Add a Pressable (top-right, above the list/empty-state) labeled "Settings" navigating to it.
+```
+
+**Correction (confirmed 2026-08-27):** the draft's manual-verification step described a whole extra feature in prose — a native `setSoundEnabled` method — without ever writing it as a real step. Without it, the Sound switch is a dead control: it updates the store but nothing native reads it, so audio plays regardless. Added as real code below, following the same pattern as `setFastForward` (Task 18): a new `PokeEmuCore.setSoundEnabled(enabled)` entry in the TS interface (`src/native/PokeEmuCore.ts`), native implementations on both platforms that mute rather than tear down the audio path, and one call site in `EmulatorScreen`'s load effect.
+
+```ts
+// src/native/PokeEmuCore.ts (add to the PokeEmuCoreNative type)
+setSoundEnabled(enabled: boolean): void;
+```
+
+```swift
+// ios/PokeEmu/MGBABridge.swift (add)
+func setSoundEnabled(_ enabled: Bool) {
+  audioEngine.mainMixerNode.outputVolume = enabled ? 1.0 : 0.0
+}
+```
+
+```swift
+// ios/PokeEmu/PokeEmuCoreModule.swift (add)
+@objc func setSoundEnabled(_ enabled: Bool) {
+  bridge.setSoundEnabled(enabled)
+}
+```
+
+```objc
+// ios/PokeEmu/PokeEmuCoreModule.m (add)
+RCT_EXTERN_METHOD(setSoundEnabled:(BOOL)enabled)
+```
+
+```cpp
+// android/app/src/main/cpp/mgba_bridge.cpp (add global, modify the audio
+// callback to still drain the core's buffers while muted so they don't
+// back up, and add the JNI export)
+std::atomic<bool> gSoundEnabled{true};
+
+// inside PokeEmuAudioCallback::onAudioReady, after reading left/right as before:
+bool soundEnabled = gSoundEnabled.load();
+for (int32_t i = 0; i < numFrames; i++) {
+  out[i * 2] = soundEnabled ? left[i] : 0;
+  out[i * 2 + 1] = soundEnabled ? right[i] : 0;
+}
+
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetSoundEnabled(JNIEnv*, jobject, jboolean enabled) {
+  gSoundEnabled = enabled;
+}
+```
+
+```kotlin
+// android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt (add)
+private external fun nativeSetSoundEnabled(enabled: Boolean)
+
+@ReactMethod
+fun setSoundEnabled(enabled: Boolean) { nativeSetSoundEnabled(enabled) }
+```
+
+```tsx
+// src/screens/EmulatorScreen.tsx (modify the loadROM .then() callback)
+PokeEmuCore.loadROM(route.params.filePath)
+  .then(() => {
+    PokeEmuCore.setSoundEnabled(useSettingsStore.getState().soundEnabled);
+    if (!cancelled) PokeEmuCore.play();
+  })
+  // ...catch unchanged
 ```
 
 - [ ] **Step 3: Manual verification**
 
-Open Settings, toggle sound off, start a ROM, confirm no audio plays; toggle it back on, confirm audio resumes on the next load (Task 13's audio start should read `soundEnabled` before calling `startAudio()`/`startAudioStream()` — wire that one-line check into `EmulatorScreen`'s load effect: skip calling `PokeEmuCore.play()`'s underlying audio start when `useSettingsStore.getState().soundEnabled` is `false`, e.g. by exposing a `setSoundEnabled(enabled: boolean)` native method mirroring the pattern of `setFastForward`, muting the mixer node / Oboe stream instead of tearing it down).
+Open Settings, toggle sound off, start a ROM, confirm no audio plays; toggle it back on, start another ROM, confirm audio plays. The setting is read once at load time (matching the spec), not live-reactive while already playing.
 
 - [ ] **Step 4: Commit**
 

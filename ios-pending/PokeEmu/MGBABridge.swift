@@ -88,6 +88,10 @@ final class MGBABridge {
   // vendor/mgba/include/mgba/core/core.h and mGBA's vendored blip_buf.h —
   // confirmed against both at the pinned tag.
 
+  func setSoundEnabled(_ enabled: Bool) {
+    audioEngine.mainMixerNode.outputVolume = enabled ? 1.0 : 0.0
+  }
+
   func play() {
     guard let core = core, !running else { return }
     running = true

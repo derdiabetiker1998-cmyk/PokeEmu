@@ -123,5 +123,9 @@ class PokeEmuCoreModule: RCTEventEmitter {
     bridge.removeAllCheats()
   }
 
+  @objc func setSoundEnabled(_ enabled: Bool) {
+    bridge.setSoundEnabled(enabled)
+  }
+
   @objc static func requiresMainQueueSetup() -> Bool { return false }
 }

@@ -13,5 +13,6 @@ RCT_EXTERN_METHOD(saveState:(NSString *)romId slotIndex:(nonnull NSNumber *)slot
 RCT_EXTERN_METHOD(loadState:(NSString *)romId slotIndex:(nonnull NSNumber *)slotIndex withResolver:(RCTPromiseResolveBlock)resolve withRejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(applyCheat:(NSString *)code enabled:(BOOL)enabled withResolver:(RCTPromiseResolveBlock)resolve withRejecter:(RCTPromiseRejectBlock)reject)
 RCT_EXTERN_METHOD(removeAllCheats)
+RCT_EXTERN_METHOD(setSoundEnabled:(BOOL)enabled)
 
 @end

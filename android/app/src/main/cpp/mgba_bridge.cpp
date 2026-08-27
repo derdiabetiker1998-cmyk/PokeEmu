@@ -19,6 +19,7 @@ std::thread gRunThread;
 std::vector<uint32_t> gVideoBuffer;
 std::atomic<int> gFastForwardMultiplier{1};
 std::unordered_map<std::string, mCheatSet*> gCheatSetsByCode;
+std::atomic<bool> gSoundEnabled{true};
 
 class PokeEmuAudioCallback : public oboe::AudioStreamDataCallback {
 public:
@@ -27,11 +28,14 @@ public:
     auto* out = static_cast<int16_t*>(audioData);
     std::vector<int16_t> left(numFrames);
     std::vector<int16_t> right(numFrames);
+    // Always drain the core's audio buffers even when muted, so they don't
+    // back up while the game keeps running.
     blip_read_samples(gCore->getAudioChannel(gCore, 0), left.data(), numFrames, 0);
     blip_read_samples(gCore->getAudioChannel(gCore, 1), right.data(), numFrames, 0);
+    bool soundEnabled = gSoundEnabled.load();
     for (int32_t i = 0; i < numFrames; i++) {
-      out[i * 2] = left[i];
-      out[i * 2 + 1] = right[i];
+      out[i * 2] = soundEnabled ? left[i] : 0;
+      out[i * 2 + 1] = soundEnabled ? right[i] : 0;
     }
     return oboe::DataCallbackResult::Continue;
   }
@@ -166,6 +170,10 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeRemoveAllCh
     mCheatRemoveSet(device, entry.second);
   }
   gCheatSetsByCode.clear();
+}
+
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetSoundEnabled(JNIEnv*, jobject, jboolean enabled) {
+  gSoundEnabled = enabled;
 }
 
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetButtonState(JNIEnv* env, jobject, jstring jbutton, jboolean pressed) {

@@ -24,6 +24,7 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
   private external fun nativeSetFastForward(enabled: Boolean, speedMultiplier: Double)
   private external fun nativeApplyCheat(code: String, enabled: Boolean): Boolean
   private external fun nativeRemoveAllCheats()
+  private external fun nativeSetSoundEnabled(enabled: Boolean)
 
   private fun stateFilePath(romId: String, slot: Int): String {
     val dir = java.io.File(reactApplicationContext.filesDir, "saves/$romId")
@@ -78,4 +79,7 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
 
   @ReactMethod
   fun removeAllCheats() { nativeRemoveAllCheats() }
+
+  @ReactMethod
+  fun setSoundEnabled(enabled: Boolean) { nativeSetSoundEnabled(enabled) }
 }

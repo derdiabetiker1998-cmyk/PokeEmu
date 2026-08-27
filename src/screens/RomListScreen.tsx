@@ -5,7 +5,12 @@ import { importRom } from '../state/importRom';
 import { theme } from '../theme/tokens';
 
 type Props = {
-  navigation: { navigate: (screen: 'Emulator', params: { filePath: string; romId: string }) => void };
+  navigation: {
+    navigate: {
+      (screen: 'Emulator', params: { filePath: string; romId: string }): void;
+      (screen: 'Settings'): void;
+    };
+  };
 };
 
 export function RomListScreen({ navigation }: Props) {
@@ -23,6 +28,9 @@ export function RomListScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
+      <Pressable style={styles.settingsButton} onPress={() => navigation.navigate('Settings')}>
+        <Text style={styles.settingsButtonText}>Settings</Text>
+      </Pressable>
       {roms.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>No ROMs yet.</Text>
@@ -55,6 +63,8 @@ export function RomListScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
+  settingsButton: { alignSelf: 'flex-end', margin: theme.spacing.md },
+  settingsButtonText: { ...theme.typography.body, color: theme.colors.primary, fontWeight: '600' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
   emptyText: { ...theme.typography.body, color: theme.colors.secondaryLabel },
   importButton: {
