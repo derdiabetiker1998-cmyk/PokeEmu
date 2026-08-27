@@ -119,6 +119,34 @@ final class MGBABridge {
     return mCoreLoadStateNamed(core, vf, Int32(SAVESTATE_ALL))
   }
 
+  private var cheatSetsByCode: [String: UnsafeMutablePointer<mCheatSet>] = [:]
+
+  func applyCheat(code: String, enabled: Bool) -> Bool {
+    guard let core = core, let device = core.pointee.cheatDevice(core) else { return false }
+    if !enabled {
+      if let set = cheatSetsByCode[code] {
+        mCheatRemoveSet(device, set)
+        cheatSetsByCode.removeValue(forKey: code)
+      }
+      return true
+    }
+    guard let set = device.pointee.createSet(device, "PokeEmu") else { return false }
+    let added = code.withCString { mCheatAddLine(set, $0, 0) }
+    if added {
+      mCheatAddSet(device, set)
+      cheatSetsByCode[code] = set
+    }
+    return added
+  }
+
+  func removeAllCheats() {
+    guard let core = core, let device = core.pointee.cheatDevice(core) else { return }
+    for (_, set) in cheatSetsByCode {
+      mCheatRemoveSet(device, set)
+    }
+    cheatSetsByCode.removeAll()
+  }
+
   func setKey(_ mask: UInt32, pressed: Bool) {
     guard let core = core else { return }
     if pressed {

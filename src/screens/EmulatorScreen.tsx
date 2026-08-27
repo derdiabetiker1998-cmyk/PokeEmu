@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
-import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
+import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PokeEmuCore } from '../native/PokeEmuCore';
 import { PokeEmuRenderView } from '../native/PokeEmuRenderView';
 import { TouchControls } from '../controls/TouchControls';
@@ -11,9 +12,11 @@ import { RootStackParamList } from '../navigation/RootNavigator';
 import { theme } from '../theme/tokens';
 
 type EmulatorRoute = RouteProp<RootStackParamList, 'Emulator'>;
+type EmulatorNavigation = NativeStackNavigationProp<RootStackParamList, 'Emulator'>;
 
 export function EmulatorScreen() {
   const route = useRoute<EmulatorRoute>();
+  const navigation = useNavigation<EmulatorNavigation>();
   const connected = useGamepadStatus();
   const [showSaveSheet, setShowSaveSheet] = useState(false);
 
@@ -41,9 +44,14 @@ export function EmulatorScreen() {
     <View style={styles.container}>
       {connected && <Text style={styles.controllerBadge}>🎮 Connected</Text>}
       <PokeEmuRenderView style={styles.screen} />
-      <Pressable style={styles.saveStatesButton} onPress={() => setShowSaveSheet(true)}>
-        <Text style={styles.saveStatesButtonText}>Save States</Text>
-      </Pressable>
+      <View style={styles.toolbar}>
+        <Pressable style={styles.saveStatesButton} onPress={() => setShowSaveSheet(true)}>
+          <Text style={styles.saveStatesButtonText}>Save States</Text>
+        </Pressable>
+        <Pressable style={styles.saveStatesButton} onPress={() => navigation.navigate('CheatsEditor')}>
+          <Text style={styles.saveStatesButtonText}>Cheats</Text>
+        </Pressable>
+      </View>
       {showSaveSheet && <SaveStateSheet onClose={() => setShowSaveSheet(false)} />}
       <TouchControls />
     </View>
@@ -54,6 +62,7 @@ const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.backgroundDark, alignItems: 'center', justifyContent: 'center' },
   screen: { width: 240 * 2, height: 160 * 2 },
   controllerBadge: { color: theme.colors.labelDark, ...theme.typography.caption, marginBottom: theme.spacing.sm },
+  toolbar: { flexDirection: 'row', gap: theme.spacing.sm },
   saveStatesButton: {
     marginTop: theme.spacing.sm,
     paddingHorizontal: theme.spacing.md,

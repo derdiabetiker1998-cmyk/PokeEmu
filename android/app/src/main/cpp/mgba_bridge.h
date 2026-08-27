@@ -10,4 +10,6 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuRenderView_nativeCopyFrameIn
 JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSaveState(JNIEnv*, jobject, jstring path);
 JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadState(JNIEnv*, jobject, jstring path);
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetFastForward(JNIEnv*, jobject, jboolean enabled, jdouble speedMultiplier);
+JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeApplyCheat(JNIEnv*, jobject, jstring code, jboolean enabled);
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeRemoveAllCheats(JNIEnv*, jobject);
 }

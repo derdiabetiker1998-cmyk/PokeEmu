@@ -116,10 +116,12 @@ class PokeEmuCoreModule: RCTEventEmitter {
 
   @objc(applyCheat:enabled:withResolver:withRejecter:)
   func applyCheat(code: String, enabled: Bool, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-    resolve(true)
+    resolve(bridge.applyCheat(code: code, enabled: enabled))
   }
 
-  @objc func removeAllCheats() {}
+  @objc func removeAllCheats() {
+    bridge.removeAllCheats()
+  }
 
   @objc static func requiresMainQueueSetup() -> Bool { return false }
 }

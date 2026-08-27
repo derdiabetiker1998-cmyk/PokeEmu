@@ -1,6 +1,7 @@
 #include "mgba_bridge.h"
 #include <mgba/core/core.h>
 #include <mgba/core/serialize.h>
+#include <mgba/core/cheats.h>
 #include <mgba/gba/interface.h>
 #include <android/bitmap.h>
 #include <oboe/Oboe.h>
@@ -8,6 +9,7 @@
 #include <cstring>
 #include <string>
 #include <thread>
+#include <unordered_map>
 #include <vector>
 
 namespace {
@@ -16,6 +18,7 @@ std::atomic<bool> gRunning{false};
 std::thread gRunThread;
 std::vector<uint32_t> gVideoBuffer;
 std::atomic<int> gFastForwardMultiplier{1};
+std::unordered_map<std::string, mCheatSet*> gCheatSetsByCode;
 
 class PokeEmuAudioCallback : public oboe::AudioStreamDataCallback {
 public:
@@ -127,6 +130,42 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetFastForw
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativePause(JNIEnv*, jobject) {
   gRunning = false;
   if (gRunThread.joinable()) gRunThread.join();
+}
+
+JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeApplyCheat(JNIEnv* env, jobject, jstring jcode, jboolean enabled) {
+  if (!gCore) return JNI_FALSE;
+  mCheatDevice* device = gCore->cheatDevice(gCore);
+  if (!device) return JNI_FALSE;
+
+  const char* codeChars = env->GetStringUTFChars(jcode, nullptr);
+  std::string code(codeChars);
+  env->ReleaseStringUTFChars(jcode, codeChars);
+
+  if (!enabled) {
+    auto it = gCheatSetsByCode.find(code);
+    if (it == gCheatSetsByCode.end()) return JNI_TRUE;
+    mCheatRemoveSet(device, it->second);
+    gCheatSetsByCode.erase(it);
+    return JNI_TRUE;
+  }
+
+  mCheatSet* set = device->createSet(device, "PokeEmu");
+  bool added = mCheatAddLine(set, code.c_str(), 0);
+  if (added) {
+    mCheatAddSet(device, set);
+    gCheatSetsByCode[code] = set;
+  }
+  return added ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeRemoveAllCheats(JNIEnv*, jobject) {
+  if (!gCore) return;
+  mCheatDevice* device = gCore->cheatDevice(gCore);
+  if (!device) return;
+  for (auto& entry : gCheatSetsByCode) {
+    mCheatRemoveSet(device, entry.second);
+  }
+  gCheatSetsByCode.clear();
 }
 
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetButtonState(JNIEnv* env, jobject, jstring jbutton, jboolean pressed) {
