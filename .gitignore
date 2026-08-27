@@ -1,1 +1,50 @@
+# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native
+.kotlin/
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# NOTE: /ios and /android are intentionally NOT ignored — this is a bare
+# workflow app with hand-edited native modules (Swift/Kotlin/C++) that must
+# be committed, not regenerated ephemeral prebuild output.
+
+# git worktrees created for isolated implementation branches
 .worktrees/
+
+# local-only ROM/save fixtures — never bundle or commit ROMs
+fixtures/
+*.gba
+*.sav
+*.state
