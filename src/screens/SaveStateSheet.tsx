@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import { PokeEmuCore } from '../native/PokeEmuCore';
 import { useSessionStore } from '../state/session';
 import { theme } from '../theme/tokens';
@@ -11,14 +11,22 @@ export function SaveStateSheet({ onClose }: { onClose: () => void }) {
 
   const handleSave = async (slot: number) => {
     if (!romId) return;
-    await PokeEmuCore.saveState(romId, slot);
-    onClose();
+    try {
+      await PokeEmuCore.saveState(romId, slot);
+      onClose();
+    } catch {
+      Alert.alert('Save failed', `Could not save to slot ${slot}.`);
+    }
   };
 
   const handleLoad = async (slot: number) => {
     if (!romId) return;
-    await PokeEmuCore.loadState(romId, slot);
-    onClose();
+    try {
+      await PokeEmuCore.loadState(romId, slot);
+      onClose();
+    } catch {
+      Alert.alert('Load failed', `Slot ${slot} may be empty or from an incompatible version.`);
+    }
   };
 
   return (

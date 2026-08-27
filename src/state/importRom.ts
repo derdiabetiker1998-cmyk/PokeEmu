@@ -11,13 +11,28 @@ function titleFromFilename(name: string): string {
   return name.replace(/\.gba$/i, '');
 }
 
-export async function importRom(): Promise<RomEntry | null> {
+async function hasValidGbaHeader(uri: string): Promise<boolean> {
+  const base64 = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.Base64, length: 192, position: 0 });
+  const header = Buffer.from(base64, 'base64');
+  // Byte 0x04 of a valid GBA ROM header begins the fixed Nintendo logo bitmap,
+  // whose first byte is always 0x24.
+  return header.length >= 5 && header[0x04] === 0x24;
+}
+
+// Returns `undefined` when the user simply cancelled the picker (not an
+// error — the caller shouldn't alert), `null` when a file was picked but
+// rejected (wrong extension or bad header — the caller should alert), or
+// the imported entry on success.
+export async function importRom(): Promise<RomEntry | null | undefined> {
   const result = await DocumentPicker.getDocumentAsync({ copyToCacheDirectory: false });
   if (result.canceled || !result.assets?.[0]) {
-    return null;
+    return undefined;
   }
   const asset = result.assets[0];
   if (!/\.gba$/i.test(asset.name)) {
+    return null;
+  }
+  if (!(await hasValidGbaHeader(asset.uri))) {
     return null;
   }
 

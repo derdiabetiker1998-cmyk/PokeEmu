@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Pressable, StyleSheet, Alert } from 'react-native';
 import { useFocusEffect, useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { PokeEmuCore } from '../native/PokeEmuCore';
@@ -23,9 +23,15 @@ export function EmulatorScreen() {
   useEffect(() => {
     let cancelled = false;
     useSessionStore.getState().setActiveRomId(route.params.romId);
-    PokeEmuCore.loadROM(route.params.filePath).then(() => {
-      if (!cancelled) PokeEmuCore.play();
-    });
+    PokeEmuCore.loadROM(route.params.filePath)
+      .then(() => {
+        if (!cancelled) PokeEmuCore.play();
+      })
+      .catch(() => {
+        Alert.alert('Could not start this ROM', 'The core failed to load it.', [
+          { text: 'OK', onPress: () => navigation.goBack() },
+        ]);
+      });
     return () => {
       cancelled = true;
       useSessionStore.getState().setActiveRomId(null);
@@ -39,6 +45,17 @@ export function EmulatorScreen() {
       return () => PokeEmuCore.pause();
     }, [])
   );
+
+  const wasConnected = useRef(connected);
+  useEffect(() => {
+    if (wasConnected.current && !connected) {
+      PokeEmuCore.pause();
+      Alert.alert('Controller disconnected', 'Reconnect it and press Resume to continue.', [
+        { text: 'Resume', onPress: () => PokeEmuCore.play() },
+      ]);
+    }
+    wasConnected.current = connected;
+  }, [connected]);
 
   return (
     <View style={styles.container}>

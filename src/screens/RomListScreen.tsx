@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, FlatList, Pressable, StyleSheet } from 'react-native';
+import { View, Text, FlatList, Pressable, StyleSheet, Alert } from 'react-native';
 import { useRomLibraryStore } from '../state/romLibrary';
 import { importRom } from '../state/importRom';
 import { theme } from '../theme/tokens';
@@ -12,7 +12,13 @@ export function RomListScreen({ navigation }: Props) {
   const roms = useRomLibraryStore((s) => s.roms);
 
   const handleImport = async () => {
-    await importRom();
+    const entry = await importRom();
+    // entry === undefined means the user just cancelled the picker — not
+    // an error, don't alert. entry === null means a file was picked but
+    // rejected (wrong extension or bad header).
+    if (entry === null) {
+      Alert.alert('Import failed', 'That file could not be added — make sure it is a valid GBA ROM.');
+    }
   };
 
   return (

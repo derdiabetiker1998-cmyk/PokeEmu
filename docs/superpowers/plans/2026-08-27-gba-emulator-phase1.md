@@ -732,6 +732,11 @@ jest.mock('expo-file-system/legacy', () => ({
   copyAsync: jest.fn(),
   readAsStringAsync: jest.fn(),
   getInfoAsync: jest.fn().mockResolvedValue({ exists: true }),
+  // EncodingType is added here ahead of Task 20 — that task's
+  // hasValidGbaHeader() reads FileSystem.EncodingType.Base64, which
+  // doesn't exist on this mock otherwise ("Cannot read properties of
+  // undefined (reading 'Base64')"), confirmed by actually running Task 20.
+  EncodingType: { Base64: 'base64', UTF8: 'utf8' },
 }));
 
 const VALID_GBA_HEADER_B64 = Buffer.alloc(192, 0).toString('base64'); // simplified: real header check is on magic bytes at offset 0xB2
@@ -3187,6 +3192,8 @@ git commit -m "feat: add GameShark cheat code support"
 
 - [ ] **Step 1: Extend the failing test for GBA header validation**
 
+**Correction (confirmed 2026-08-27):** once `importRom()` reads the header, Task 7's existing "copies a picked .gba file and adds it to the library" test breaks too — it never mocked `readAsStringAsync`'s resolved value, so `Buffer.from(undefined, 'base64')` throws. Give that test the same valid-header mock as the new "accepts a valid header" test below, in addition to adding the two new tests.
+
 ```ts
 // src/state/importRom.test.ts (add)
 it('rejects a .gba file whose header magic bytes are wrong', async () => {
@@ -3252,13 +3259,18 @@ Expected: PASS (5 tests total)
 
 - [ ] **Step 5: Surface a user-facing alert on invalid import**
 
+**Correction (confirmed 2026-08-27):** the draft's `if (!entry)` check fires the alert on a plain cancelled picker too, not just a rejected file — `importRom()` returned `null` for both cases, so there was no way to tell them apart. Fixed by changing `importRom()`'s contract: it now resolves `undefined` for "user cancelled" (falsy, not an error, don't alert) and `null` for "a file was picked but rejected" (alert). Update Task 7's `importRom.ts` return type to `Promise<RomEntry | null | undefined>` and its cancel-path `return null` to `return undefined`, and update the Task 7 test "returns null when the user cancels the picker" to assert `toBeUndefined()` instead (rename it to "returns undefined...").
+
 ```tsx
 // src/screens/RomListScreen.tsx (modify handleImport)
 import { Alert } from 'react-native';
 // ...
 const handleImport = async () => {
   const entry = await importRom();
-  if (!entry) {
+  // entry === undefined means the user just cancelled the picker — not
+  // an error, don't alert. entry === null means a file was picked but
+  // rejected (wrong extension or bad header).
+  if (entry === null) {
     Alert.alert('Import failed', 'That file could not be added — make sure it is a valid GBA ROM.');
   }
 };
