@@ -2,6 +2,7 @@
 #include <mgba/core/core.h>
 #include <mgba/gba/interface.h>
 #include <android/bitmap.h>
+#include <oboe/Oboe.h>
 #include <atomic>
 #include <cstring>
 #include <string>
@@ -13,6 +14,38 @@ mCore* gCore = nullptr;
 std::atomic<bool> gRunning{false};
 std::thread gRunThread;
 std::vector<uint32_t> gVideoBuffer;
+
+class PokeEmuAudioCallback : public oboe::AudioStreamDataCallback {
+public:
+  oboe::DataCallbackResult onAudioReady(oboe::AudioStream*, void* audioData, int32_t numFrames) override {
+    if (!gCore) return oboe::DataCallbackResult::Continue;
+    auto* out = static_cast<int16_t*>(audioData);
+    std::vector<int16_t> left(numFrames);
+    std::vector<int16_t> right(numFrames);
+    blip_read_samples(gCore->getAudioChannel(gCore, 0), left.data(), numFrames, 0);
+    blip_read_samples(gCore->getAudioChannel(gCore, 1), right.data(), numFrames, 0);
+    for (int32_t i = 0; i < numFrames; i++) {
+      out[i * 2] = left[i];
+      out[i * 2 + 1] = right[i];
+    }
+    return oboe::DataCallbackResult::Continue;
+  }
+};
+PokeEmuAudioCallback gAudioCallback;
+std::shared_ptr<oboe::AudioStream> gAudioStream;
+
+void startAudioStream() {
+  if (gAudioStream) return; // already running — don't leak a second stream on ROM reload
+  oboe::AudioStreamBuilder builder;
+  builder.setDirection(oboe::Direction::Output)
+      ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
+      ->setSampleRate(32768)
+      ->setChannelCount(2)
+      ->setFormat(oboe::AudioFormat::I16)
+      ->setDataCallback(&gAudioCallback)
+      ->openStream(gAudioStream);
+  if (gAudioStream) gAudioStream->requestStart();
+}
 
 uint32_t keyMaskForName(const std::string& name) {
   if (name == "A") return 1u << 0;
@@ -59,6 +92,9 @@ JNIEXPORT jobject JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM(
   jobject map = env->NewObject(mapClass, init);
   env->CallVoidMethod(map, putInt, env->NewStringUTF("width"), (jint)width);
   env->CallVoidMethod(map, putInt, env->NewStringUTF("height"), (jint)height);
+
+  startAudioStream();
+
   return map;
 }
 

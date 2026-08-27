@@ -4,6 +4,10 @@ project(pokeemu_bridge)
 set(MGBA_DIR ${CMAKE_SOURCE_DIR}/../../../../../vendor/mgba)
 add_subdirectory(${MGBA_DIR} mgba_build)
 
+# Resolves via the Prefab package shipped inside the com.google.oboe:oboe AAR
+# (see android/app/build.gradle's buildFeatures.prefab + dependency).
+find_package(oboe REQUIRED CONFIG)
+
 add_library(pokeemu_bridge SHARED mgba_bridge.cpp)
 target_include_directories(pokeemu_bridge PRIVATE ${MGBA_DIR}/include)
-target_link_libraries(pokeemu_bridge mgba log android jnigraphics)
+target_link_libraries(pokeemu_bridge mgba log android jnigraphics oboe::oboe)

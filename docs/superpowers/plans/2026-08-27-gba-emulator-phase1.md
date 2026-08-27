@@ -1908,50 +1908,83 @@ git commit -m "feat: wire navigation shell and EmulatorScreen lifecycle"
 **Files:**
 - Modify: `ios/PokeEmu/MGBABridge.swift` (pull audio samples each frame, feed `AVAudioEngine`)
 - Modify: `android/app/src/main/cpp/mgba_bridge.cpp` (pull audio samples each frame, feed Oboe)
-- Modify: `android/app/build.gradle` (add Oboe dependency), `android/app/src/main/cpp/CMakeLists.txt` (link Oboe)
+- Modify: `android/app/build.gradle` (enable `prefab`, add Oboe dependency), `android/app/src/main/cpp/CMakeLists.txt` (`find_package(oboe CONFIG)`, link `oboe::oboe`)
 
 **Interfaces:**
 - Produces: audible sound during gameplay on both platforms; no new JS-facing API (audio is entirely native).
 
 - [ ] **Step 1: iOS — pull samples via `AVAudioEngine`'s source node**
 
+**Correction (confirmed 2026-08-27):** the original draft captured the `core` pointer by value in the `AVAudioSourceNode` closure and only ran its setup once, guarded by a "have we started" flag. That breaks on a second ROM load: `unload()` deallocates the first core, a new `loadROM` assigns a new pointer to `self.core`, but the closure still captures the stale first pointer — a dangling-pointer read. The fix below captures `self` weakly and re-reads `self?.core` on every callback instead, and separates "attach the node" (once) from "start the engine" (every load, since `unload()` stops it).
+
 ```swift
 // ios/PokeEmu/MGBABridge.swift (add to the class)
 private let audioEngine = AVAudioEngine()
+private var audioNodeAttached = false
 
 func startAudio() {
-  guard let core = core else { return }
-  let format = AVAudioFormat(standardFormatWithSampleRate: 32768, channels: 2)!
-  let sourceNode = AVAudioSourceNode { _, _, frameCount, audioBufferList -> OSStatus in
-    let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
-    let left = core.pointee.getAudioChannel(core, 0)
-    let right = core.pointee.getAudioChannel(core, 1)
-    var samplesLeft = [Int16](repeating: 0, count: Int(frameCount))
-    var samplesRight = [Int16](repeating: 0, count: Int(frameCount))
-    blip_read_samples(left, &samplesLeft, Int32(frameCount), 0)
-    blip_read_samples(right, &samplesRight, Int32(frameCount), 0)
-    for frame in 0..<Int(frameCount) {
-      let l = Float(samplesLeft[frame]) / Float(Int16.max)
-      let r = Float(samplesRight[frame]) / Float(Int16.max)
-      ablPointer[0].mData?.assumingMemoryBound(to: Float.self)[frame] = l
-      ablPointer[1].mData?.assumingMemoryBound(to: Float.self)[frame] = r
+  if !audioNodeAttached {
+    audioNodeAttached = true
+    let format = AVAudioFormat(standardFormatWithSampleRate: 32768, channels: 2)!
+    let sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+      let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+      guard let core = self?.core else {
+        for buffer in ablPointer {
+          buffer.mData?.assumingMemoryBound(to: Float.self).update(repeating: 0, count: Int(frameCount))
+        }
+        return noErr
+      }
+      let left = core.pointee.getAudioChannel(core, 0)
+      let right = core.pointee.getAudioChannel(core, 1)
+      var samplesLeft = [Int16](repeating: 0, count: Int(frameCount))
+      var samplesRight = [Int16](repeating: 0, count: Int(frameCount))
+      blip_read_samples(left, &samplesLeft, Int32(frameCount), 0)
+      blip_read_samples(right, &samplesRight, Int32(frameCount), 0)
+      for frame in 0..<Int(frameCount) {
+        let l = Float(samplesLeft[frame]) / Float(Int16.max)
+        let r = Float(samplesRight[frame]) / Float(Int16.max)
+        ablPointer[0].mData?.assumingMemoryBound(to: Float.self)[frame] = l
+        ablPointer[1].mData?.assumingMemoryBound(to: Float.self)[frame] = r
+      }
+      return noErr
     }
-    return noErr
+    audioEngine.attach(sourceNode)
+    audioEngine.connect(sourceNode, to: audioEngine.mainMixerNode, format: format)
   }
-  audioEngine.attach(sourceNode)
-  audioEngine.connect(sourceNode, to: audioEngine.mainMixerNode, format: format)
-  try? audioEngine.start()
+  try? audioEngine.start() // safe to call even if already running
 }
 // `getAudioChannel` returning a blip_t* and `blip_read_samples` match
 // vendor/mgba/include/mgba/core/core.h and mGBA's vendored blip_buf.h —
-// confirm both against the vendored headers at the pinned tag.
+// confirmed against both at the pinned tag.
 ```
 
-Call `startAudio()` right after a successful `load(path:)`, and stop the engine (`audioEngine.stop()`) in `unload()`.
+Call `startAudio()` at the end of `load(path:)`, right after computing width/height, and add `audioEngine.stop()` to `unload()` (alongside the existing `pause()`/`deinit`/buffer-deallocate calls).
 
 - [ ] **Step 2: Android — pull samples via Oboe**
 
-Add to `android/app/build.gradle` dependencies: `implementation("com.google.oboe:oboe:1.9.0")` (or vendor Oboe as a submodule per its own README if the Maven artifact isn't available — Oboe is Google's official low-latency Android audio library).
+**Correction (confirmed 2026-08-27, checked against Google's Maven repo at `dl.google.com`):** `com.google.oboe:oboe` is real and `1.10.0` is its current latest version (the draft's `1.9.0` also exists but is superseded). Oboe ships as a **Prefab**-packaged AAR, not a plain Maven jar — consuming its native headers/libs from CMake requires enabling `buildFeatures.prefab` in `build.gradle` and calling `find_package(oboe REQUIRED CONFIG)` in `CMakeLists.txt`; the original draft's `target_link_libraries` didn't show this and would fail to find `<oboe/Oboe.h>` without it. Also replaced the two `int16_t left[numFrames]` VLAs (a non-standard GCC/Clang extension) with `std::vector<int16_t>`.
+
+```gradle
+// android/app/build.gradle (add inside the `android { ... }` block)
+buildFeatures {
+    prefab true
+}
+```
+
+```gradle
+// android/app/build.gradle (add to the `dependencies { ... }` block)
+implementation("com.google.oboe:oboe:1.10.0")
+```
+
+```cmake
+# android/app/src/main/cpp/CMakeLists.txt (add before target_link_libraries)
+find_package(oboe REQUIRED CONFIG)
+```
+
+```cmake
+# android/app/src/main/cpp/CMakeLists.txt (modify the existing target_link_libraries line)
+target_link_libraries(pokeemu_bridge mgba log android jnigraphics oboe::oboe)
+```
 
 ```cpp
 // android/app/src/main/cpp/mgba_bridge.cpp (add)
@@ -1960,14 +1993,14 @@ Add to `android/app/build.gradle` dependencies: `implementation("com.google.oboe
 namespace {
 class PokeEmuAudioCallback : public oboe::AudioStreamDataCallback {
 public:
-  oboe::DataCallbackResult onAudioReady(oboe::AudioStream* stream, void* audioData, int32_t numFrames) override {
+  oboe::DataCallbackResult onAudioReady(oboe::AudioStream*, void* audioData, int32_t numFrames) override {
     if (!gCore) return oboe::DataCallbackResult::Continue;
     auto* out = static_cast<int16_t*>(audioData);
-    int16_t left[numFrames];
-    int16_t right[numFrames];
-    blip_read_samples(gCore->getAudioChannel(gCore, 0), left, numFrames, 0);
-    blip_read_samples(gCore->getAudioChannel(gCore, 1), right, numFrames, 0);
-    for (int i = 0; i < numFrames; i++) {
+    std::vector<int16_t> left(numFrames);
+    std::vector<int16_t> right(numFrames);
+    blip_read_samples(gCore->getAudioChannel(gCore, 0), left.data(), numFrames, 0);
+    blip_read_samples(gCore->getAudioChannel(gCore, 1), right.data(), numFrames, 0);
+    for (int32_t i = 0; i < numFrames; i++) {
       out[i * 2] = left[i];
       out[i * 2 + 1] = right[i];
     }
@@ -1976,9 +2009,9 @@ public:
 };
 PokeEmuAudioCallback gAudioCallback;
 std::shared_ptr<oboe::AudioStream> gAudioStream;
-}
 
 void startAudioStream() {
+  if (gAudioStream) return; // already running — don't leak a second stream on ROM reload
   oboe::AudioStreamBuilder builder;
   builder.setDirection(oboe::Direction::Output)
       ->setPerformanceMode(oboe::PerformanceMode::LowLatency)
@@ -1987,11 +2020,12 @@ void startAudioStream() {
       ->setFormat(oboe::AudioFormat::I16)
       ->setDataCallback(&gAudioCallback)
       ->openStream(gAudioStream);
-  gAudioStream->requestStart();
+  if (gAudioStream) gAudioStream->requestStart();
+}
 }
 ```
 
-Call `startAudioStream()` at the end of `Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM` after a successful load.
+Call `startAudioStream()` at the end of `Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM` after a successful load (right before `return map;`).
 
 - [ ] **Step 3: Manual verification**
 

@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 import mgba // the vendored C headers, imported via the module map / bridging header
 
 final class MGBABridge {
@@ -6,6 +7,8 @@ final class MGBABridge {
   private var running = false
   private let queue = DispatchQueue(label: "com.pokeemu.core.runloop")
   private var videoBuffer: UnsafeMutablePointer<UInt32>?
+  private let audioEngine = AVAudioEngine()
+  private var audioNodeAttached = false
 
   func attachVideoBuffer(width: Int, height: Int) -> UnsafeMutablePointer<UInt32> {
     videoBuffer?.deallocate()
@@ -26,11 +29,57 @@ final class MGBABridge {
     var width: CUnsignedInt = 0
     var height: CUnsignedInt = 0
     core!.pointee.desiredVideoDimensions(core, &width, &height)
+    startAudio()
     return (Int(width), Int(height))
   }
   // Field names above (`init`, `loadROM`, `reset`, `desiredVideoDimensions`) match
   // vendor/mgba/include/mgba/core/core.h at tag 0.10.3 — re-check against
   // that file if the pinned tag changes.
+
+  func startAudio() {
+    // The source node is attached/connected once and reads `self?.core`
+    // live on every callback (rather than capturing the `core` pointer by
+    // value), so it keeps working correctly across multiple loadROM calls
+    // even though this setup only runs the first time — otherwise, after
+    // unload() deinits this core and a second ROM loads a new one, a
+    // value-captured callback would keep reading the freed first core.
+    if !audioNodeAttached {
+      audioNodeAttached = true
+      let format = AVAudioFormat(standardFormatWithSampleRate: 32768, channels: 2)!
+      let sourceNode = AVAudioSourceNode { [weak self] _, _, frameCount, audioBufferList -> OSStatus in
+        let ablPointer = UnsafeMutableAudioBufferListPointer(audioBufferList)
+        guard let core = self?.core else {
+          for buffer in ablPointer {
+            buffer.mData?.assumingMemoryBound(to: Float.self).update(repeating: 0, count: Int(frameCount))
+          }
+          return noErr
+        }
+        let left = core.pointee.getAudioChannel(core, 0)
+        let right = core.pointee.getAudioChannel(core, 1)
+        var samplesLeft = [Int16](repeating: 0, count: Int(frameCount))
+        var samplesRight = [Int16](repeating: 0, count: Int(frameCount))
+        blip_read_samples(left, &samplesLeft, Int32(frameCount), 0)
+        blip_read_samples(right, &samplesRight, Int32(frameCount), 0)
+        for frame in 0..<Int(frameCount) {
+          let l = Float(samplesLeft[frame]) / Float(Int16.max)
+          let r = Float(samplesRight[frame]) / Float(Int16.max)
+          ablPointer[0].mData?.assumingMemoryBound(to: Float.self)[frame] = l
+          ablPointer[1].mData?.assumingMemoryBound(to: Float.self)[frame] = r
+        }
+        return noErr
+      }
+      audioEngine.attach(sourceNode)
+      audioEngine.connect(sourceNode, to: audioEngine.mainMixerNode, format: format)
+    }
+    // Safe to call even if already running (AVAudioEngine.start() is a
+    // no-op in that case) — this is what actually needs to re-run after
+    // unload()'s audioEngine.stop(), since node attach/connect above only
+    // happens once.
+    try? audioEngine.start()
+  }
+  // `getAudioChannel` returning a blip_t* and `blip_read_samples` match
+  // vendor/mgba/include/mgba/core/core.h and mGBA's vendored blip_buf.h —
+  // confirmed against both at the pinned tag.
 
   func play() {
     guard let core = core, !running else { return }
@@ -57,6 +106,7 @@ final class MGBABridge {
 
   func unload() {
     pause()
+    audioEngine.stop()
     core?.pointee.`deinit`(core)
     core = nil
     videoBuffer?.deallocate()

@@ -87,6 +87,12 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    // Required for CMake to see Oboe's native libs/headers via find_package(oboe CONFIG) —
+    // Oboe is distributed as a Prefab-packaged AAR, not a plain Maven jar.
+    buildFeatures {
+        prefab true
+    }
+
     namespace 'com.impoxx.PokeEmu'
     defaultConfig {
         applicationId 'com.impoxx.PokeEmu'
@@ -166,6 +172,11 @@ android {
 dependencies {
     // The version of react-native is set by the React Native Gradle Plugin
     implementation("com.facebook.react:react-android")
+
+    // Google's low-latency audio library, used by mgba_bridge.cpp to feed
+    // the core's audio output. Distributed as a Prefab AAR — see the
+    // `buildFeatures.prefab true` block above.
+    implementation("com.google.oboe:oboe:1.10.0")
 
     def isGifEnabled = (findProperty('expo.gif.enabled') ?: "") == "true";
     def isWebpEnabled = (findProperty('expo.webp.enabled') ?: "") == "true";
