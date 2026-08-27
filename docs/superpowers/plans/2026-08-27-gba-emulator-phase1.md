@@ -1220,10 +1220,10 @@ final class MGBABridge {
     core!.pointee.reset(core)
     var width: CUnsignedInt = 0
     var height: CUnsignedInt = 0
-    core!.pointee.getVideoDimensions(core, &width, &height)
+    core!.pointee.desiredVideoDimensions(core, &width, &height)
     return (Int(width), Int(height))
   }
-  // Field names above (`init`, `loadROM`, `reset`, `getVideoDimensions`) match
+  // Field names above (`init`, `loadROM`, `reset`, `desiredVideoDimensions`) match
   // vendor/mgba/include/mgba/core/core.h at tag 0.10.3 — re-check against
   // that file if the pinned tag changes.
 
@@ -1368,7 +1368,7 @@ JNIEXPORT jobject JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM(
   gCore->reset(gCore);
 
   unsigned width = 0, height = 0;
-  gCore->getVideoDimensions(gCore, &width, &height);
+  gCore->desiredVideoDimensions(gCore, &width, &height);
 
   jclass hashMapClass = env->FindClass("java/util/HashMap");
   jmethodID init = env->GetMethodID(hashMapClass, "<init>", "()V");
@@ -2174,24 +2174,34 @@ git commit -m "feat: support external Bluetooth/MFi controllers alongside touch 
 
 - [ ] **Step 1: iOS — real save/load via mCore**
 
+**Correction (confirmed against the vendored header 2026-08-27):** `mCore`'s struct has no `saveState(core, slot)` member — its `saveState`/`loadState` struct members take a raw `void* state` buffer, not a slot number. Slot-based file persistence is the free function pair `bool mCoreSaveStateNamed(struct mCore*, struct VFile*, int flags)` / `bool mCoreLoadStateNamed(struct mCore*, struct VFile*, int flags)` from `vendor/mgba/include/mgba/core/core.h`, given an already-open `VFile*` at whatever path we choose — this fits the spec's `Documents/saves/<romId>/state-slot-N.state` path better than mGBA's own slot-numbering convention (`mCoreSaveState(core, slot, flags)`, which writes next to the ROM via the core's directory set), so this plan uses the `Named` variant with an explicitly-opened `VFile` throughout. `flags` uses `SAVESTATE_ALL` (defined in `vendor/mgba/include/mgba/core/serialize.h` as `31`) for full-fidelity states (savedata + cheats + RTC + metadata + screenshot).
+
 ```swift
 // ios/PokeEmu/MGBABridge.swift (add)
-func saveState(slot: Int) -> Bool {
-  guard let core = core else { return false }
-  return core.pointee.saveState(core, Int32(slot))
+func saveState(toPath path: String) -> Bool {
+  guard let core = core, let vf = VFileOpen(path, O_WRONLY | O_CREAT | O_TRUNC) else { return false }
+  return mCoreSaveStateNamed(core, vf, Int32(SAVESTATE_ALL))
 }
 
-func loadState(slot: Int) -> Bool {
-  guard let core = core else { return false }
-  return core.pointee.loadState(core, Int32(slot))
+func loadState(fromPath path: String) -> Bool {
+  guard let core = core, let vf = VFileOpen(path, O_RDONLY) else { return false }
+  return mCoreLoadStateNamed(core, vf, Int32(SAVESTATE_ALL))
 }
 ```
 
 ```swift
 // ios/PokeEmu/PokeEmuCoreModule.swift (replace stub bodies)
+private func stateFilePath(romId: String, slot: Int) -> String {
+  let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+  let dir = docs.appendingPathComponent("saves").appendingPathComponent(romId)
+  try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+  return dir.appendingPathComponent("state-slot-\(slot).state").path
+}
+
 @objc(saveState:slotIndex:withResolver:withRejecter:)
 func saveState(romId: String, slotIndex: NSNumber, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-  if bridge.saveState(slot: slotIndex.intValue) {
+  let path = stateFilePath(romId: romId, slot: slotIndex.intValue)
+  if bridge.saveState(toPath: path) {
     resolve(nil)
   } else {
     reject("SAVE_STATE_FAILED", "Could not save state to slot \(slotIndex)", nil)
@@ -2200,7 +2210,8 @@ func saveState(romId: String, slotIndex: NSNumber, resolve: @escaping RCTPromise
 
 @objc(loadState:slotIndex:withResolver:withRejecter:)
 func loadState(romId: String, slotIndex: NSNumber, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {
-  if bridge.loadState(slot: slotIndex.intValue) {
+  let path = stateFilePath(romId: romId, slot: slotIndex.intValue)
+  if bridge.loadState(fromPath: path) {
     resolve(nil)
   } else {
     reject("LOAD_STATE_FAILED", "Could not load state from slot \(slotIndex)", nil)
@@ -2208,37 +2219,51 @@ func loadState(romId: String, slotIndex: NSNumber, resolve: @escaping RCTPromise
 }
 ```
 
-mGBA's `mCore->saveState`/`loadState` write/read `.ss0`–`.ssN` files next to the ROM by default via its `mCoreConfig` — confirm the exact slot-file path convention in `vendor/mgba/include/mgba/core/core.h` and `src/core/core.c`'s `mCoreSaveStateNamed`/equivalent for the pinned tag, and set `core->dirs.state` (or the equivalent config field at that tag) to `Documents/saves/<romId>/` before the save/load call so slots land under the path this plan's spec documents, rather than mGBA's default alongside the ROM.
-
 - [ ] **Step 2: Android — mirror in JNI**
 
 ```cpp
 // android/app/src/main/cpp/mgba_bridge.cpp (add)
-JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSaveState(JNIEnv*, jobject, jint slot) {
+#include <mgba/core/serialize.h>
+
+JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSaveState(JNIEnv* env, jobject, jstring jpath) {
   if (!gCore) return JNI_FALSE;
-  return gCore->saveState(gCore, slot) ? JNI_TRUE : JNI_FALSE;
+  const char* path = env->GetStringUTFChars(jpath, nullptr);
+  struct VFile* vf = VFileOpen(path, O_WRONLY | O_CREAT | O_TRUNC);
+  env->ReleaseStringUTFChars(jpath, path);
+  if (!vf) return JNI_FALSE;
+  return mCoreSaveStateNamed(gCore, vf, SAVESTATE_ALL) ? JNI_TRUE : JNI_FALSE;
 }
 
-JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadState(JNIEnv*, jobject, jint slot) {
+JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadState(JNIEnv* env, jobject, jstring jpath) {
   if (!gCore) return JNI_FALSE;
-  return gCore->loadState(gCore, slot) ? JNI_TRUE : JNI_FALSE;
+  const char* path = env->GetStringUTFChars(jpath, nullptr);
+  struct VFile* vf = VFileOpen(path, O_RDONLY);
+  env->ReleaseStringUTFChars(jpath, path);
+  if (!vf) return JNI_FALSE;
+  return mCoreLoadStateNamed(gCore, vf, SAVESTATE_ALL) ? JNI_TRUE : JNI_FALSE;
 }
 ```
 
 ```kotlin
 // android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt (replace stub bodies)
-private external fun nativeSaveState(slot: Int): Boolean
-private external fun nativeLoadState(slot: Int): Boolean
+private external fun nativeSaveState(path: String): Boolean
+private external fun nativeLoadState(path: String): Boolean
+
+private fun stateFilePath(romId: String, slot: Int): String {
+  val dir = java.io.File(reactApplicationContext.filesDir, "saves/$romId")
+  dir.mkdirs()
+  return java.io.File(dir, "state-slot-$slot.state").absolutePath
+}
 
 @ReactMethod
 fun saveState(romId: String, slotIndex: Int, promise: Promise) {
-  if (nativeSaveState(slotIndex)) promise.resolve(null)
+  if (nativeSaveState(stateFilePath(romId, slotIndex))) promise.resolve(null)
   else promise.reject("SAVE_STATE_FAILED", "Could not save state to slot $slotIndex")
 }
 
 @ReactMethod
 fun loadState(romId: String, slotIndex: Int, promise: Promise) {
-  if (nativeLoadState(slotIndex)) promise.resolve(null)
+  if (nativeLoadState(stateFilePath(romId, slotIndex))) promise.resolve(null)
   else promise.reject("LOAD_STATE_FAILED", "Could not load state from slot $slotIndex")
 }
 ```
@@ -2406,7 +2431,7 @@ func load(path: String) -> (width: Int, height: Int)? {
   core!.pointee.reset(core)
   var width: CUnsignedInt = 0
   var height: CUnsignedInt = 0
-  core!.pointee.getVideoDimensions(core, &width, &height)
+  core!.pointee.desiredVideoDimensions(core, &width, &height)
   return (Int(width), Int(height))
 }
 ```
@@ -2577,32 +2602,37 @@ git commit -m "feat: add fast-forward/turbo control"
 
 - [ ] **Step 1: iOS — real cheat application via `mCheatDevice`**
 
+**Correction (confirmed against the vendored header 2026-08-27):** there is no `attachCheatDevice` member and no standalone `mCheatDeviceCreate()`/`mCheatSetCreate()` factory functions with those exact shapes. The real API: `core->cheatDevice(core)` is a struct member that returns the core's own already-initialized `mCheatDevice*` (mGBA creates and owns it internally — we don't create or attach one ourselves). Sets are created via the device's own `createSet` member (`device->createSet(device, name)`), and `mCheatRemoveSet(device, set)` takes the **set pointer**, not the code string — so removing a single code by its text requires us to track which `mCheatSet*` backs which code string ourselves.
+
 ```swift
 // ios/PokeEmu/MGBABridge.swift (add)
-private var cheatDevice: UnsafeMutablePointer<mCheatDevice>?
+private var cheatSetsByCode: [String: UnsafeMutablePointer<mCheatSet>] = [:]
 
 func applyCheat(code: String, enabled: Bool) -> Bool {
-  guard let core = core else { return false }
-  if cheatDevice == nil {
-    cheatDevice = mCheatDeviceCreate()
-    core.pointee.attachCheatDevice(core, cheatDevice)
-  }
-  guard let device = cheatDevice else { return false }
+  guard let core = core, let device = core.pointee.cheatDevice(core) else { return false }
   if !enabled {
-    mCheatRemoveSet(device, code)
+    if let set = cheatSetsByCode[code] {
+      mCheatRemoveSet(device, set)
+      cheatSetsByCode.removeValue(forKey: code)
+    }
     return true
   }
-  let set = mCheatSetCreate(device, "PokeEmu")
-  let added = mCheatAddLine(set, code, 0)
+  guard let set = device.pointee.createSet(device, "PokeEmu") else { return false }
+  let added = code.withCString { mCheatAddLine(set, $0, 0) }
   if added {
     mCheatAddSet(device, set)
+    cheatSetsByCode[code] = set
   }
   return added
 }
-// mCheatDeviceCreate/mCheatSetCreate/mCheatAddLine/mCheatAddSet/attachCheatDevice
-// match vendor/mgba/include/mgba/core/cheats.h at tag 0.10.3 — confirm exact
-// signatures (some take an owned vs. borrowed set pointer) against that
-// header before relying on this snippet verbatim.
+
+func removeAllCheats() {
+  guard let core = core, let device = core.pointee.cheatDevice(core) else { return }
+  for (_, set) in cheatSetsByCode {
+    mCheatRemoveSet(device, set)
+  }
+  cheatSetsByCode.removeAll()
+}
 ```
 
 ```swift
@@ -2617,46 +2647,66 @@ func applyCheat(code: String, enabled: Bool, resolve: @escaping RCTPromiseResolv
 }
 ```
 
-Add a matching `removeAllCheats()` to `MGBABridge` that clears every set on `cheatDevice`.
-
 - [ ] **Step 2: Android — mirror in JNI**
 
 ```cpp
 // android/app/src/main/cpp/mgba_bridge.cpp (add)
 #include <mgba/core/cheats.h>
+#include <string>
+#include <unordered_map>
 
-namespace { mCheatDevice* gCheatDevice = nullptr; }
+namespace { std::unordered_map<std::string, mCheatSet*> gCheatSetsByCode; }
 
 JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeApplyCheat(JNIEnv* env, jobject, jstring jcode, jboolean enabled) {
   if (!gCore) return JNI_FALSE;
-  if (!gCheatDevice) {
-    gCheatDevice = mCheatDeviceCreate();
-    gCore->attachCheatDevice(gCore, gCheatDevice);
-  }
-  const char* code = env->GetStringUTFChars(jcode, nullptr);
-  bool result = false;
+  mCheatDevice* device = gCore->cheatDevice(gCore);
+  if (!device) return JNI_FALSE;
+
+  const char* codeChars = env->GetStringUTFChars(jcode, nullptr);
+  std::string code(codeChars);
+  env->ReleaseStringUTFChars(jcode, codeChars);
+
   if (!enabled) {
-    mCheatRemoveSet(gCheatDevice, code);
-    result = true;
-  } else {
-    mCheatSet* set = mCheatSetCreate(gCheatDevice, "PokeEmu");
-    if (mCheatAddLine(set, code, 0)) {
-      mCheatAddSet(gCheatDevice, set);
-      result = true;
-    }
+    auto it = gCheatSetsByCode.find(code);
+    if (it == gCheatSetsByCode.end()) return JNI_TRUE;
+    mCheatRemoveSet(device, it->second);
+    gCheatSetsByCode.erase(it);
+    return JNI_TRUE;
   }
-  env->ReleaseStringUTFChars(jcode, code);
-  return result ? JNI_TRUE : JNI_FALSE;
+
+  mCheatSet* set = device->createSet(device, "PokeEmu");
+  bool added = mCheatAddLine(set, code.c_str(), 0);
+  if (added) {
+    mCheatAddSet(device, set);
+    gCheatSetsByCode[code] = set;
+  }
+  return added ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeRemoveAllCheats(JNIEnv*, jobject) {
+  if (!gCore) return;
+  mCheatDevice* device = gCore->cheatDevice(gCore);
+  if (!device) return;
+  for (auto& entry : gCheatSetsByCode) {
+    mCheatRemoveSet(device, entry.second);
+  }
+  gCheatSetsByCode.clear();
 }
 ```
 
 ```kotlin
 // android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt (replace stub)
 private external fun nativeApplyCheat(code: String, enabled: Boolean): Boolean
+private external fun nativeRemoveAllCheats()
 
 @ReactMethod
 fun applyCheat(code: String, enabled: Boolean, promise: Promise) {
   promise.resolve(nativeApplyCheat(code, enabled))
+}
+
+@ReactMethod
+fun removeAllCheats() {
+  nativeRemoveAllCheats()
 }
 ```
 
