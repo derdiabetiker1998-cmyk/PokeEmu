@@ -18,6 +18,7 @@
 - No ROMs are ever bundled in the repo or committed to git. All manual verification steps use a ROM file the user supplies locally, at a path outside version control (`fixtures/` is gitignored).
 - Native/core-integration tasks are verified manually (build, run, observe) rather than with automated unit tests, per the spec's Testing section — mGBA's C internals are not re-tested by this project. JS/TS business logic (stores, parsers) uses real Jest TDD.
 - Package manager: npm (matches the user's other Expo projects).
+- **Build mechanism:** the development machine is Windows with no local Xcode (impossible on Windows at all) and no local Android SDK/NDK/Java installed. All native builds go through **EAS Build** (configured in Task 1.5) instead of `npx expo run:ios` / `npx expo run:android`. Wherever a later task's manual verification step says to run one of those commands, substitute: trigger an EAS development build for that platform (`eas build --profile development --platform ios` / `--platform android`) and install the resulting build on a physical device via the link EAS prints, then perform the same observation the step describes.
 
 ---
 
@@ -145,6 +146,70 @@ Expected: default Expo template screen launches on a simulator/device without er
 ```bash
 git add -A
 git commit -m "chore: scaffold Expo bare-workflow app with Jest configured"
+```
+
+---
+
+### Task 1.5: EAS Build configuration
+
+**Files:**
+- Create: `eas.json`
+- Modify: `app.json` (add the `extra.eas.projectId` field EAS generates)
+
+**Interfaces:**
+- Produces: a `development` EAS build profile for both platforms, so every later task's "run locally" verification step can be replaced with "trigger an EAS development build and install it on device," per the Global Constraints note above.
+
+- [ ] **Step 1: Install the EAS CLI**
+
+```bash
+npm install --save-dev eas-cli
+```
+
+- [ ] **Step 2: Log in to Expo (human step — requires the user's own account)**
+
+Run: `npx eas login`
+This opens an interactive prompt for Expo account credentials — the user runs this themselves once, since it's tied to their own Expo account (the same one used for the SpotifyClone/TamaPoke EAS builds mentioned in project history).
+
+- [ ] **Step 3: Configure the project for EAS Build**
+
+```bash
+npx eas build:configure
+```
+
+This generates `eas.json` and writes a generated `extra.eas.projectId` into `app.json`. Accept the defaults for "bare React Native" when prompted (the project is already a bare workflow app after Task 1's `expo prebuild`).
+
+- [ ] **Step 4: Confirm `eas.json` has a `development` profile for both platforms**
+
+```json
+{
+  "cli": { "version": ">= 5.0.0" },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "ios": { "resourceClass": "m-medium" },
+      "android": { "resourceClass": "medium" }
+    }
+  }
+}
+```
+
+If `eas build:configure` didn't produce a `development` profile matching this shape, edit `eas.json` to match it.
+
+- [ ] **Step 5: Confirm the vendored mGBA submodule will be included in EAS's clone**
+
+EAS Build clones the repository fresh into its build container and does fetch registered git submodules automatically for a repo pushed to GitHub/GitLab/Bitbucket with EAS's GitHub/GitLab integration connected — confirm this by checking Expo's current EAS Build documentation for "git submodules" support at build time before relying on it; if unsupported for the connected git provider, the fallback is `eas build --local` is not an option here (still needs local Xcode/NDK), so instead vendor mGBA's needed source files directly into the repo (drop the git-submodule approach from Task 2) rather than as a submodule reference.
+
+- [ ] **Step 6: Verify with a throwaway build**
+
+Run: `npx eas build --profile development --platform android`
+Expected: the build queues and completes in Expo's cloud (no local Android SDK needed); a QR code / link is printed for installing the resulting build on a physical Android device. Repeat with `--platform ios` once an Apple Developer account is available for ad hoc signing (can be deferred until Task 9's first real iOS-side verification is due).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add eas.json app.json
+git commit -m "chore: configure EAS Build for development-profile installs on physical devices"
 ```
 
 ---
