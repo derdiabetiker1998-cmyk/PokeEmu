@@ -3,6 +3,7 @@ import { View, StyleSheet } from 'react-native';
 import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { PokeEmuCore } from '../native/PokeEmuCore';
 import { PokeEmuRenderView } from '../native/PokeEmuRenderView';
+import { TouchControls } from '../controls/TouchControls';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { theme } from '../theme/tokens';
 
@@ -32,6 +33,7 @@ export function EmulatorScreen() {
   return (
     <View style={styles.container}>
       <PokeEmuRenderView style={styles.screen} />
+      <TouchControls />
     </View>
   );
 }

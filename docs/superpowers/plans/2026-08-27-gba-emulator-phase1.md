@@ -2060,7 +2060,19 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { TouchControls } from './TouchControls';
 import { PokeEmuCore } from '../native/PokeEmuCore';
 
-jest.mock('../native/PokeEmuCore', () => ({ PokeEmuCore: { setButtonState: jest.fn() } }));
+// Correction (confirmed 2026-08-27): the original draft's mock only
+// provided PokeEmuCore, but TouchControls.tsx calls the setButton()
+// wrapper (Task 9), which the mock didn't export — every onPressIn/
+// onPressOut threw "setButton is not a function". Reimplement setButton
+// here wired to the same mocked setButtonState (not via requireActual,
+// which would pull in the real setButton bound to the real PokeEmuCore).
+jest.mock('../native/PokeEmuCore', () => {
+  const PokeEmuCore = { setButtonState: jest.fn() };
+  return {
+    PokeEmuCore,
+    setButton: (button: string, pressed: boolean) => PokeEmuCore.setButtonState(button, pressed),
+  };
+});
 
 describe('TouchControls', () => {
   beforeEach(() => jest.clearAllMocks());
