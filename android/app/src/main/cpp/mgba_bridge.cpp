@@ -15,6 +15,7 @@ mCore* gCore = nullptr;
 std::atomic<bool> gRunning{false};
 std::thread gRunThread;
 std::vector<uint32_t> gVideoBuffer;
+std::atomic<int> gFastForwardMultiplier{1};
 
 class PokeEmuAudioCallback : public oboe::AudioStreamDataCallback {
 public:
@@ -112,9 +113,15 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativePlay(JNIEnv
   gRunning = true;
   gRunThread = std::thread([]() {
     while (gRunning) {
-      gCore->runFrame(gCore);
+      for (int i = 0; i < gFastForwardMultiplier.load(); i++) {
+        gCore->runFrame(gCore);
+      }
     }
   });
+}
+
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetFastForward(JNIEnv*, jobject, jboolean enabled, jdouble speedMultiplier) {
+  gFastForwardMultiplier = enabled ? static_cast<int>(speedMultiplier) : 1;
 }
 
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativePause(JNIEnv*, jobject) {

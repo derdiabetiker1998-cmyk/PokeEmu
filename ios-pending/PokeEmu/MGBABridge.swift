@@ -9,6 +9,7 @@ final class MGBABridge {
   private var videoBuffer: UnsafeMutablePointer<UInt32>?
   private let audioEngine = AVAudioEngine()
   private var audioNodeAttached = false
+  private var fastForwardMultiplier: Int = 1
 
   func attachVideoBuffer(width: Int, height: Int) -> UnsafeMutablePointer<UInt32> {
     videoBuffer?.deallocate()
@@ -92,13 +93,20 @@ final class MGBABridge {
     running = true
     queue.async { [weak self] in
       while self?.running == true {
-        core.pointee.runFrame(core)
+        let steps = self?.fastForwardMultiplier ?? 1
+        for _ in 0..<steps {
+          core.pointee.runFrame(core)
+        }
       }
     }
   }
 
   func pause() {
     running = false
+  }
+
+  func setFastForward(multiplier: Int) {
+    fastForwardMultiplier = max(1, multiplier)
   }
 
   func saveState(toPath path: String) -> Bool {

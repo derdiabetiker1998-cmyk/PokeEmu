@@ -9,4 +9,5 @@ JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetButtonSt
 JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuRenderView_nativeCopyFrameInto(JNIEnv*, jobject, jobject bitmap);
 JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSaveState(JNIEnv*, jobject, jstring path);
 JNIEXPORT jboolean JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadState(JNIEnv*, jobject, jstring path);
+JNIEXPORT void JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeSetFastForward(JNIEnv*, jobject, jboolean enabled, jdouble speedMultiplier);
 }

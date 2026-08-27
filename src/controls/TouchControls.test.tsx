@@ -2,9 +2,10 @@ import React from 'react';
 import { render, fireEvent } from '@testing-library/react-native';
 import { TouchControls } from './TouchControls';
 import { PokeEmuCore } from '../native/PokeEmuCore';
+import { useSettingsStore } from '../state/settings';
 
 jest.mock('../native/PokeEmuCore', () => {
-  const PokeEmuCore = { setButtonState: jest.fn() };
+  const PokeEmuCore = { setButtonState: jest.fn(), setFastForward: jest.fn() };
   return {
     PokeEmuCore,
     // setButton() is a thin wrapper around PokeEmuCore.setButtonState() —
@@ -15,7 +16,10 @@ jest.mock('../native/PokeEmuCore', () => {
 });
 
 describe('TouchControls', () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    useSettingsStore.setState({ fastForwardSpeed: 2 });
+  });
 
   it('sends pressed=true on pressIn for the A button', async () => {
     const { getByTestId } = await render(<TouchControls />);
@@ -33,5 +37,13 @@ describe('TouchControls', () => {
     const { getByTestId } = await render(<TouchControls />);
     await fireEvent(getByTestId('dpad-Up'), 'pressIn');
     expect(PokeEmuCore.setButtonState).toHaveBeenCalledWith('Up', true);
+  });
+
+  it('enables fast-forward at the configured speed on pressIn, disables on pressOut', async () => {
+    const { getByTestId } = await render(<TouchControls />);
+    await fireEvent(getByTestId('button-FastForward'), 'pressIn');
+    expect(PokeEmuCore.setFastForward).toHaveBeenCalledWith(true, 2);
+    await fireEvent(getByTestId('button-FastForward'), 'pressOut');
+    expect(PokeEmuCore.setFastForward).toHaveBeenCalledWith(false, 2);
   });
 });

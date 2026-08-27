@@ -83,7 +83,9 @@ class PokeEmuCoreModule: RCTEventEmitter {
     bridge.setKey(mask, pressed: pressed)
   }
 
-  @objc func setFastForward(_ enabled: Bool, speedMultiplier: Double) {}
+  @objc func setFastForward(_ enabled: Bool, speedMultiplier: Double) {
+    bridge.setFastForward(multiplier: enabled ? Int(speedMultiplier) : 1)
+  }
 
   private func stateFilePath(romId: String, slot: Int) -> String {
     let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]

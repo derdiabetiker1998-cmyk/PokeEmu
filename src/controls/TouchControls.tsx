@@ -1,7 +1,8 @@
 import React from 'react';
 import { View, Pressable, Text, StyleSheet } from 'react-native';
-import { setButton } from '../native/PokeEmuCore';
+import { PokeEmuCore, setButton } from '../native/PokeEmuCore';
 import { GBAButton } from '../native/buttons';
+import { useSettingsStore } from '../state/settings';
 import { theme } from '../theme/tokens';
 
 function ControlButton({ button, label, testID }: { button: GBAButton; label: string; testID: string }) {
@@ -31,6 +32,8 @@ function DPadButton({ button, label, testID }: { button: GBAButton; label: strin
 }
 
 export function TouchControls() {
+  const fastForwardSpeed = useSettingsStore((s) => s.fastForwardSpeed);
+
   return (
     <View style={styles.container}>
       <View style={styles.dpad}>
@@ -45,6 +48,14 @@ export function TouchControls() {
         <ControlButton button={GBAButton.B} label="B" testID="button-B" />
         <ControlButton button={GBAButton.A} label="A" testID="button-A" />
       </View>
+      <Pressable
+        testID="button-FastForward"
+        style={styles.roundButton}
+        onPressIn={() => PokeEmuCore.setFastForward(true, fastForwardSpeed)}
+        onPressOut={() => PokeEmuCore.setFastForward(false, fastForwardSpeed)}
+      >
+        <Text style={styles.buttonLabel}>{fastForwardSpeed}×</Text>
+      </Pressable>
       <View style={styles.systemButtons}>
         <ControlButton button={GBAButton.Select} label="Select" testID="button-Select" />
         <ControlButton button={GBAButton.Start} label="Start" testID="button-Start" />

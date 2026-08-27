@@ -21,6 +21,7 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
   private external fun nativeSetButtonState(button: String, pressed: Boolean)
   private external fun nativeSaveState(path: String): Boolean
   private external fun nativeLoadState(path: String): Boolean
+  private external fun nativeSetFastForward(enabled: Boolean, speedMultiplier: Double)
 
   private fun stateFilePath(romId: String, slot: Int): String {
     val dir = java.io.File(reactApplicationContext.filesDir, "saves/$romId")
@@ -54,7 +55,7 @@ class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBas
   fun setButtonState(button: String, pressed: Boolean) { nativeSetButtonState(button, pressed) }
 
   @ReactMethod
-  fun setFastForward(enabled: Boolean, speedMultiplier: Double) {}
+  fun setFastForward(enabled: Boolean, speedMultiplier: Double) { nativeSetFastForward(enabled, speedMultiplier) }
 
   @ReactMethod
   fun saveState(romId: String, slotIndex: Int, promise: Promise) {
