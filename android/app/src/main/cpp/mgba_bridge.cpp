@@ -67,6 +67,7 @@ uint32_t keyMaskForName(const std::string& name) {
 
 JNIEXPORT jobject JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM(JNIEnv* env, jobject, jstring jpath) {
   const char* path = env->GetStringUTFChars(jpath, nullptr);
+  std::string pathStr(path);
   struct VFile* vf = VFileOpen(path, O_RDONLY);
   env->ReleaseStringUTFChars(jpath, path);
   if (!vf) return nullptr;
@@ -75,6 +76,13 @@ JNIEXPORT jobject JNICALL Java_com_pokeemu_core_PokeEmuCoreModule_nativeLoadROM(
   if (!gCore || !gCore->init(gCore) || !gCore->loadROM(gCore, vf)) {
     return nullptr;
   }
+
+  std::string savePath = pathStr.substr(0, pathStr.find_last_of('.')) + ".sav";
+  struct VFile* saveVf = VFileOpen(savePath.c_str(), O_RDWR | O_CREAT);
+  if (saveVf) {
+    gCore->loadSave(gCore, saveVf);
+  }
+
   gCore->reset(gCore);
 
   unsigned width = 0, height = 0;

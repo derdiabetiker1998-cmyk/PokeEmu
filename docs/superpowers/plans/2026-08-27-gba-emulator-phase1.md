@@ -2698,17 +2698,30 @@ Remove the placeholder body added to `pause()` above — attaching the save `VFi
 
 - [ ] **Step 2: Android — mirror in JNI's `nativeLoadROM`**
 
+**Correction (confirmed 2026-08-27):** by the point `nativeLoadROM` knows the ROM load succeeded, its `path` JNI string was already released a few lines earlier (right after `VFileOpen(path, O_RDONLY)`) — the draft's "insert before it's released" instruction doesn't fit the function's actual shape. Fix: capture `path` into a `std::string` *before* releasing the JNI string, so it survives past the release for building `savePath` later.
+
 ```cpp
-// android/app/src/main/cpp/mgba_bridge.cpp (modify nativeLoadROM, after the successful ROM load)
-std::string pathStr(path);
+// android/app/src/main/cpp/mgba_bridge.cpp (modify nativeLoadROM)
+const char* path = env->GetStringUTFChars(jpath, nullptr);
+std::string pathStr(path);  // capture before releasing, needed for savePath below
+struct VFile* vf = VFileOpen(path, O_RDONLY);
+env->ReleaseStringUTFChars(jpath, path);
+if (!vf) return nullptr;
+
+gCore = mCoreFindVF(vf);
+if (!gCore || !gCore->init(gCore) || !gCore->loadROM(gCore, vf)) {
+  return nullptr;
+}
+
 std::string savePath = pathStr.substr(0, pathStr.find_last_of('.')) + ".sav";
 struct VFile* saveVf = VFileOpen(savePath.c_str(), O_RDWR | O_CREAT);
 if (saveVf) {
   gCore->loadSave(gCore, saveVf);
 }
-```
 
-(Insert this using the already-open `path` C string captured earlier in the function, before it's released via `ReleaseStringUTFChars`.)
+gCore->reset(gCore);
+// ...rest of the function (video buffer setup, WritableNativeMap, startAudioStream) unchanged
+```
 
 - [ ] **Step 3: Manual verification**
 

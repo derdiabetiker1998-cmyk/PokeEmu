@@ -25,6 +25,12 @@ final class MGBABridge {
     core = found
     guard core!.pointee.`init`(core) else { return nil }
     guard core!.pointee.loadROM(core, vf) else { return nil }
+
+    let savePath = (path as NSString).deletingPathExtension + ".sav"
+    if let saveVf = VFileOpen(savePath, O_RDWR | O_CREAT) {
+      _ = core!.pointee.loadSave(core, saveVf)
+    }
+
     core!.pointee.reset(core)
     var width: CUnsignedInt = 0
     var height: CUnsignedInt = 0
