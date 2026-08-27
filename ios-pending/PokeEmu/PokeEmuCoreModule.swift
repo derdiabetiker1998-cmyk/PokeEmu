@@ -1,8 +1,62 @@
 import Foundation
+import GameController
 
+// NOTE: subclassing RCTEventEmitter (instead of NSObject) requires
+// `#import <React/RCTEventEmitter.h>` in this target's Objective-C
+// bridging header — add that once the real Xcode project exists
+// (this file currently lives in ios-pending/, see the plan's Global
+// Constraints "iOS project scaffold gap" note).
 @objc(PokeEmuCoreModule)
-class PokeEmuCoreModule: NSObject {
+class PokeEmuCoreModule: RCTEventEmitter {
   private let bridge = MGBABridge()
+  private var hasListeners = false
+
+  override init() {
+    super.init()
+    observeControllers()
+  }
+
+  override func supportedEvents() -> [String]! {
+    return ["controllerStatusChanged"]
+  }
+
+  override func startObserving() {
+    hasListeners = true
+  }
+
+  override func stopObserving() {
+    hasListeners = false
+  }
+
+  // Correction (confirmed 2026-08-27): the original draft posted a custom
+  // `.pokeEmuControllerStatusChanged` NotificationCenter notification and
+  // left "bridge it to JS via a separate PokeEmuControllerEvents module"
+  // as prose — but the JS hook (Step 3) actually constructs its
+  // NativeEventEmitter around NativeModules.PokeEmuCore, meaning the
+  // event must come from THIS module, not a separate one. Making
+  // PokeEmuCoreModule itself an RCTEventEmitter and calling sendEvent
+  // directly (no NotificationCenter indirection needed) resolves the
+  // mismatch with less code.
+  private func observeControllers() {
+    NotificationCenter.default.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] note in
+      guard let self = self, let controller = note.object as? GCController, let gamepad = controller.extendedGamepad else { return }
+      gamepad.buttonA.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 0, pressed: pressed) }
+      gamepad.buttonB.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 1, pressed: pressed) }
+      gamepad.buttonMenu.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 3, pressed: pressed) }
+      gamepad.buttonOptions?.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 2, pressed: pressed) }
+      gamepad.leftShoulder.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 9, pressed: pressed) }
+      gamepad.rightShoulder.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 8, pressed: pressed) }
+      gamepad.dpad.up.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 6, pressed: pressed) }
+      gamepad.dpad.down.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 7, pressed: pressed) }
+      gamepad.dpad.left.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 5, pressed: pressed) }
+      gamepad.dpad.right.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 4, pressed: pressed) }
+      if self.hasListeners { self.sendEvent(withName: "controllerStatusChanged", body: true) }
+    }
+    NotificationCenter.default.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] _ in
+      guard let self = self else { return }
+      if self.hasListeners { self.sendEvent(withName: "controllerStatusChanged", body: false) }
+    }
+  }
 
   @objc(loadROM:withResolver:withRejecter:)
   func loadROM(path: String, resolve: @escaping RCTPromiseResolveBlock, reject: @escaping RCTPromiseRejectBlock) {

@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet } from 'react-native';
 import { useFocusEffect, useRoute, RouteProp } from '@react-navigation/native';
 import { PokeEmuCore } from '../native/PokeEmuCore';
 import { PokeEmuRenderView } from '../native/PokeEmuRenderView';
 import { TouchControls } from '../controls/TouchControls';
+import { useGamepadStatus } from '../controls/useGamepadStatus';
 import { RootStackParamList } from '../navigation/RootNavigator';
 import { theme } from '../theme/tokens';
 
@@ -11,6 +12,7 @@ type EmulatorRoute = RouteProp<RootStackParamList, 'Emulator'>;
 
 export function EmulatorScreen() {
   const route = useRoute<EmulatorRoute>();
+  const connected = useGamepadStatus();
 
   useEffect(() => {
     let cancelled = false;
@@ -32,6 +34,7 @@ export function EmulatorScreen() {
 
   return (
     <View style={styles.container}>
+      {connected && <Text style={styles.controllerBadge}>🎮 Connected</Text>}
       <PokeEmuRenderView style={styles.screen} />
       <TouchControls />
     </View>
@@ -41,4 +44,5 @@ export function EmulatorScreen() {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.backgroundDark, alignItems: 'center', justifyContent: 'center' },
   screen: { width: 240 * 2, height: 160 * 2 },
+  controllerBadge: { color: theme.colors.labelDark, ...theme.typography.caption, marginBottom: theme.spacing.sm },
 });

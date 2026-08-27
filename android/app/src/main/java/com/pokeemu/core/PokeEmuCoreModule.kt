@@ -5,6 +5,14 @@ import com.facebook.react.bridge.*
 class PokeEmuCoreModule(reactContext: ReactApplicationContext) : ReactContextBaseJavaModule(reactContext) {
   companion object {
     init { System.loadLibrary("pokeemu_bridge") }
+    // MainActivity.dispatchKeyEvent needs to reach the already-registered
+    // module instance to forward physical gamepad button presses — there's
+    // no other handle to it from an Activity.
+    var instance: PokeEmuCoreModule? = null
+  }
+
+  init {
+    instance = this
   }
 
   private external fun nativeLoadROM(path: String): WritableMap?

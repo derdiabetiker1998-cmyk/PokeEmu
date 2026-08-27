@@ -2200,8 +2200,9 @@ git commit -m "feat: add Apple/Pokémon-styled touch controls overlay"
 ### Task 15: External controller (gamepad) input
 
 **Files:**
-- Modify: `ios/PokeEmu/PokeEmuCoreModule.swift` (GameController framework listener)
-- Modify: `android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt` (`Activity.dispatchGenericMotionEvent`/`dispatchKeyEvent` hook, via a small `MainActivity` override)
+- Modify: `ios/PokeEmu/PokeEmuCoreModule.swift` (GameController framework listener, becomes an `RCTEventEmitter`), `ios/PokeEmu/PokeEmuCoreModule.m` (superclass update)
+- Modify: `android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt` (expose an `instance` reference for `MainActivity` to reach)
+- Modify: `android/app/src/main/java/com/impoxx/PokeEmu/MainActivity.kt` (`dispatchKeyEvent` override + `InputManager.InputDeviceListener` — note the app-id package, not `com.pokeemu`)
 - Create: `src/controls/useGamepadStatus.ts`
 - Test: `src/controls/useGamepadStatus.test.ts`
 - Modify: `src/screens/EmulatorScreen.tsx` (show a small "Controller connected" indicator)
@@ -2212,37 +2213,99 @@ git commit -m "feat: add Apple/Pokémon-styled touch controls overlay"
 
 - [ ] **Step 1: iOS — listen for `GCController` connections and route button events directly to the bridge**
 
+**Correction (confirmed 2026-08-27):** the original draft posted a custom `.pokeEmuControllerStatusChanged` NotificationCenter notification and left "bridge it to JS via a separate PokeEmuControllerEvents module" as prose with no code. But the JS hook (Step 3) constructs its `NativeEventEmitter` around `NativeModules.PokeEmuCore` — the SAME module, not a separate one — so the event has to come from `PokeEmuCoreModule` itself. Fix: make `PokeEmuCoreModule` subclass `RCTEventEmitter` (instead of `NSObject`) and call `sendEvent` directly; this also removes the need for the NotificationCenter round-trip. Subclassing `RCTEventEmitter` from Swift requires `#import <React/RCTEventEmitter.h>` in this target's Objective-C bridging header once the real Xcode project exists (see the Global Constraints "iOS project scaffold gap" note) — add it there.
+
 ```swift
-// ios/PokeEmu/PokeEmuCoreModule.swift (add)
+// ios/PokeEmu/PokeEmuCoreModule.swift (change the class declaration and add)
 import GameController
 
-private func observeControllers(bridge: MGBABridge) {
-  NotificationCenter.default.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { note in
-    guard let controller = note.object as? GCController, let gamepad = controller.extendedGamepad else { return }
-    gamepad.buttonA.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 0, pressed: pressed) }
-    gamepad.buttonB.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 1, pressed: pressed) }
-    gamepad.buttonMenu.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 3, pressed: pressed) }
-    gamepad.buttonOptions?.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 2, pressed: pressed) }
-    gamepad.leftShoulder.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 9, pressed: pressed) }
-    gamepad.rightShoulder.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 8, pressed: pressed) }
-    gamepad.dpad.up.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 6, pressed: pressed) }
-    gamepad.dpad.down.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 7, pressed: pressed) }
-    gamepad.dpad.left.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 5, pressed: pressed) }
-    gamepad.dpad.right.pressedChangedHandler = { _, _, pressed in bridge.setKey(1 << 4, pressed: pressed) }
-    NotificationCenter.default.post(name: .pokeEmuControllerStatusChanged, object: true)
+@objc(PokeEmuCoreModule)
+class PokeEmuCoreModule: RCTEventEmitter {
+  private let bridge = MGBABridge()
+  private var hasListeners = false
+
+  override init() {
+    super.init()
+    observeControllers()
   }
-  NotificationCenter.default.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { _ in
-    NotificationCenter.default.post(name: .pokeEmuControllerStatusChanged, object: false)
+
+  override func supportedEvents() -> [String]! {
+    return ["controllerStatusChanged"]
+  }
+
+  override func startObserving() { hasListeners = true }
+  override func stopObserving() { hasListeners = false }
+
+  private func observeControllers() {
+    NotificationCenter.default.addObserver(forName: .GCControllerDidConnect, object: nil, queue: .main) { [weak self] note in
+      guard let self = self, let controller = note.object as? GCController, let gamepad = controller.extendedGamepad else { return }
+      gamepad.buttonA.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 0, pressed: pressed) }
+      gamepad.buttonB.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 1, pressed: pressed) }
+      gamepad.buttonMenu.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 3, pressed: pressed) }
+      gamepad.buttonOptions?.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 2, pressed: pressed) }
+      gamepad.leftShoulder.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 9, pressed: pressed) }
+      gamepad.rightShoulder.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 8, pressed: pressed) }
+      gamepad.dpad.up.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 6, pressed: pressed) }
+      gamepad.dpad.down.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 7, pressed: pressed) }
+      gamepad.dpad.left.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 5, pressed: pressed) }
+      gamepad.dpad.right.pressedChangedHandler = { _, _, pressed in self.bridge.setKey(1 << 4, pressed: pressed) }
+      if self.hasListeners { self.sendEvent(withName: "controllerStatusChanged", body: true) }
+    }
+    NotificationCenter.default.addObserver(forName: .GCControllerDidDisconnect, object: nil, queue: .main) { [weak self] _ in
+      guard let self = self else { return }
+      if self.hasListeners { self.sendEvent(withName: "controllerStatusChanged", body: false) }
+    }
   }
 }
 ```
 
-Call `observeControllers(bridge: bridge)` once in the module's `init()`. Bridge the `pokeEmuControllerStatusChanged` notification to JS via `RCTEventEmitter`'s standard pattern (a `PokeEmuControllerEvents` module emitting `controllerStatusChanged`), following the same `RCT_EXTERN_MODULE` pattern as Task 9.
+```objc
+// ios/PokeEmu/PokeEmuCoreModule.m (modify the top two lines — superclass is now RCTEventEmitter)
+#import <React/RCTBridgeModule.h>
+#import <React/RCTEventEmitter.h>
+
+@interface RCT_EXTERN_MODULE(PokeEmuCoreModule, RCTEventEmitter)
+```
 
 - [ ] **Step 2: Android — capture gamepad key/motion events in `MainActivity` and forward to the JNI bridge**
 
+**Correction (confirmed 2026-08-27):** the original draft's path (`android/app/src/main/java/com/pokeemu/MainActivity.kt`) is wrong — the app's own `MainActivity` lives in its app-id package, `com/impoxx/PokeEmu/MainActivity.kt` (see Task 1's generated `android/`), not under `com.pokeemu`. It also left "emitting a controllerStatusChanged event through the standard DeviceEventManagerModule.RCTDeviceEventEmitter pattern" as prose — but this project uses the New Architecture / Bridgeless `ReactHost` (see `MainApplication.kt`'s `ExpoReactHostFactory.getDefaultReactHost`), which doesn't have a `ReactInstanceManager`/`getJSModule` to call that pattern on. The bridgeless-compatible equivalent is `ReactContext.emitDeviceEvent(eventName, params)`, used below.
+
 ```kotlin
-// android/app/src/main/java/com/pokeemu/MainActivity.kt (modify — add overrides)
+// android/app/src/main/java/com/impoxx/PokeEmu/MainActivity.kt (add imports, properties, and overrides)
+import android.content.Context
+import android.hardware.input.InputManager
+import android.view.InputDevice
+import android.view.KeyEvent
+import com.facebook.react.ReactApplication
+import com.pokeemu.core.PokeEmuCoreModule
+
+// (inside the MainActivity class body:)
+private val inputManager: InputManager by lazy { getSystemService(Context.INPUT_SERVICE) as InputManager }
+
+private val inputDeviceListener = object : InputManager.InputDeviceListener {
+  override fun onInputDeviceAdded(deviceId: Int) { notifyControllerStatus() }
+  override fun onInputDeviceRemoved(deviceId: Int) { notifyControllerStatus() }
+  override fun onInputDeviceChanged(deviceId: Int) {}
+}
+
+// (register in onCreate, after super.onCreate(null):)
+inputManager.registerInputDeviceListener(inputDeviceListener, null)
+
+// (add as a new override alongside the existing ones:)
+override fun onDestroy() {
+  inputManager.unregisterInputDeviceListener(inputDeviceListener)
+  super.onDestroy()
+}
+
+private fun notifyControllerStatus() {
+  val connected = InputDevice.getDeviceIds().any { id ->
+    val device = InputDevice.getDevice(id)
+    device != null && (device.sources and InputDevice.SOURCE_GAMEPAD) == InputDevice.SOURCE_GAMEPAD
+  }
+  (application as ReactApplication).reactHost.currentReactContext?.emitDeviceEvent("controllerStatusChanged", connected)
+}
+
 override fun dispatchKeyEvent(event: KeyEvent): Boolean {
   val name = when (event.keyCode) {
     KeyEvent.KEYCODE_BUTTON_A -> "A"
@@ -2266,7 +2329,19 @@ override fun dispatchKeyEvent(event: KeyEvent): Boolean {
 }
 ```
 
-Give `PokeEmuCoreModule` a `companion object { var instance: PokeEmuCoreModule? = null }` set in its constructor, so `MainActivity` can reach the already-registered module instance. Register/unregister the connection status via `InputDeviceListener.onInputDeviceAdded/Removed` in `MainActivity.onCreate`, emitting a `controllerStatusChanged` event through the standard `DeviceEventManagerModule.RCTDeviceEventEmitter` pattern.
+```kotlin
+// android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt (modify — add to the existing companion object and an init block)
+companion object {
+  init { System.loadLibrary("pokeemu_bridge") }
+  // MainActivity.dispatchKeyEvent needs to reach the already-registered
+  // module instance to forward physical gamepad button presses.
+  var instance: PokeEmuCoreModule? = null
+}
+
+init {
+  instance = this
+}
+```
 
 - [ ] **Step 3: JS hook for the connection indicator**
 
@@ -2292,34 +2367,33 @@ export function useGamepadStatus(): boolean {
 
 - [ ] **Step 4: Write the test**
 
-**Correction (confirmed 2026-08-27):** `@testing-library/react-hooks` is unmaintained and incompatible with React 19 (its peer dependency caps at React 17). `renderHook` now ships directly from `@testing-library/react-native` (already installed in Task 1) — use that instead, and per the Global Constraints note on RTL v14's async API, `renderHook` and `act` must both be awaited.
+**Correction (confirmed 2026-08-27):** two problems with the original draft's test, found by actually running it. (1) `@testing-library/react-hooks` is unmaintained and incompatible with React 19 — `renderHook`/`act` now ship directly from `@testing-library/react-native` (already installed in Task 1), and per the Global Constraints RTL v14 note, both must be awaited. (2) The draft's `jest.mock('react-native', () => ({ ...jest.requireActual('react-native'), NativeModules: {...} }))` crashes outright: `jest.requireActual('react-native')` bypasses jest-expo's own React Native mock and loads the *real* module tree, which eagerly requires `NativeDevMenu` → `TurboModuleRegistry.getEnforcing(...)`, and that throws with no real native runtime present — this happens regardless of what the factory does afterward, so no variant of "spread `actual` and override one key" works here. A fully hand-rolled replacement of the whole `'react-native'` module has the same problem from the other direction: jest-expo's own preset setup (`jest-expo/src/preset/setup.js`, which every test file runs through) needs the *real* mocked `Platform`/other exports jest-expo normally provides, so swapping out the entire module for a minimal stub breaks that setup instead. The fix that actually works: don't mock `'react-native'` at all — import it normally (getting jest-expo's own working mock, confirmed functional via a plain `DeviceEventEmitter.emit(...)` call) and just mutate `NativeModules.PokeEmuCore` directly, since `NativeEventEmitter`'s real implementation only requires its constructor argument to be non-null (with `addListener`/`removeListeners` methods present to avoid a harmless console warning).
 
 ```ts
 // src/controls/useGamepadStatus.test.ts
 import { renderHook, act } from '@testing-library/react-native';
-import { NativeEventEmitter } from 'react-native';
+import { DeviceEventEmitter, NativeModules } from 'react-native';
 import { useGamepadStatus } from './useGamepadStatus';
 
-jest.mock('react-native', () => {
-  const actual = jest.requireActual('react-native');
-  return { ...actual, NativeModules: { PokeEmuCore: {} } };
-});
+(NativeModules as Record<string, unknown>).PokeEmuCore = {
+  addListener: jest.fn(),
+  removeListeners: jest.fn(),
+};
 
 describe('useGamepadStatus', () => {
   it('starts disconnected and flips true when the native event fires', async () => {
     const { result } = await renderHook(() => useGamepadStatus());
     expect(result.current).toBe(false);
 
-    const emitterInstance = (NativeEventEmitter as unknown as jest.Mock).mock.instances[0];
     await act(() => {
-      emitterInstance.emit('controllerStatusChanged', true);
+      DeviceEventEmitter.emit('controllerStatusChanged', true);
     });
     expect(result.current).toBe(true);
   });
 });
 ```
 
-Note: this test requires `NativeEventEmitter` to be a real, instantiable emitter under Jest (RN's mock already supports `.emit`).
+Note: `NativeEventEmitter` constructed with a native module argument delivers events through the same underlying `DeviceEventEmitter` used above — no need to intercept the `NativeEventEmitter` instance itself.
 
 - [ ] **Step 5: Run test to verify it passes**
 
@@ -2337,7 +2411,7 @@ Pair a Bluetooth MFi controller (iOS) or standard Bluetooth gamepad (Android), l
 - [ ] **Step 8: Commit**
 
 ```bash
-git add ios/PokeEmu/PokeEmuCoreModule.swift android/app/src/main/java/com/pokeemu/MainActivity.kt android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt src/controls/useGamepadStatus.ts src/controls/useGamepadStatus.test.ts src/screens/EmulatorScreen.tsx
+git add ios/PokeEmu/PokeEmuCoreModule.swift ios/PokeEmu/PokeEmuCoreModule.m android/app/src/main/java/com/impoxx/PokeEmu/MainActivity.kt android/app/src/main/java/com/pokeemu/core/PokeEmuCoreModule.kt src/controls/useGamepadStatus.ts src/controls/useGamepadStatus.test.ts src/screens/EmulatorScreen.tsx
 git commit -m "feat: support external Bluetooth/MFi controllers alongside touch controls"
 ```
 
