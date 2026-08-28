@@ -2,7 +2,9 @@
 #include <mgba/core/core.h>
 #include <mgba/core/serialize.h>
 #include <mgba/core/cheats.h>
+#include <mgba/core/blip_buf.h>
 #include <mgba/gba/interface.h>
+#include <mgba-util/vfs.h>
 #include <android/bitmap.h>
 #include <oboe/Oboe.h>
 #include <atomic>
