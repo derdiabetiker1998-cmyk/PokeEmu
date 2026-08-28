@@ -26,4 +26,13 @@ describe('pokedex data', () => {
     const alolanRaichu = pokedexEntries.find((e) => e.key === '26-alola')!;
     expect(displayName(alolanRaichu)).toBe('Raichu (Alola)');
   });
+
+  it('gives distinct names to forms sharing a region prefix', () => {
+    const aqua = pokedexEntries.find((e) => e.key === '128-paldea-aqua-breed')!;
+    const blaze = pokedexEntries.find((e) => e.key === '128-paldea-blaze-breed')!;
+    const combat = pokedexEntries.find((e) => e.key === '128-paldea-combat-breed')!;
+    const names = [aqua, blaze, combat].map(displayName);
+    expect(new Set(names).size).toBe(3);
+    expect(names).toEqual(['Tauros (Paldea Aqua Breed)', 'Tauros (Paldea Blaze Breed)', 'Tauros (Paldea Combat Breed)']);
+  });
 });

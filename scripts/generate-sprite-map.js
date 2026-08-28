@@ -11,7 +11,13 @@ const OUT_PATH = path.join(__dirname, '..', 'src', 'pokedex', 'spriteMap.ts');
 
 function main() {
   const entries = JSON.parse(fs.readFileSync(DATA_PATH, 'utf8'));
-  const lines = entries.map(
+  // fetch-pokedex-data.js allows `sprite: null` for a variety PokeAPI has no
+  // front_default sprite for. Skip those here instead of emitting
+  // require('.../sprites/null'), a require() of a nonexistent file that
+  // would fail the whole Metro bundle rather than just that one entry.
+  const withSprites = entries.filter((e) => e.sprite);
+  const skipped = entries.length - withSprites.length;
+  const lines = withSprites.map(
     (e) => `  '${e.key}': require('../../assets/pokedex/sprites/${e.sprite}'),`
   );
   const content = `// GENERATED FILE — do not edit by hand.
@@ -24,7 +30,8 @@ ${lines.join('\n')}
 `;
   fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
   fs.writeFileSync(OUT_PATH, content);
-  console.log(`Wrote ${entries.length} sprite entries to ${OUT_PATH}`);
+  if (skipped > 0) console.warn(`Skipped ${skipped} entries with no sprite.`);
+  console.log(`Wrote ${withSprites.length} sprite entries to ${OUT_PATH}`);
 }
 
 main();

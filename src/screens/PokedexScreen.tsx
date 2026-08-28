@@ -13,7 +13,7 @@ export function PokedexScreen() {
     <View style={styles.container}>
       <View style={styles.progressBar}>
         <Text style={styles.progressText}>
-          {caughtCount} / {pokedexEntries.length} gefangen
+          {caughtCount} / {pokedexEntries.length} caught
         </Text>
       </View>
       <FlatList
@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
   },
   cellCaught: { backgroundColor: '#FFF6D9' },
   sprite: { width: 64, height: 64 },
-  spriteUncaught: { opacity: 0.35, tintColor: undefined },
+  spriteUncaught: { opacity: 0.35 },
   dexNumber: { ...theme.typography.caption, color: theme.colors.secondaryLabel },
   name: { ...theme.typography.caption, color: theme.colors.label, fontWeight: '600' },
   checkmark: {
