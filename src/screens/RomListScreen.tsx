@@ -8,7 +8,7 @@ type Props = {
   navigation: {
     navigate: {
       (screen: 'Emulator', params: { filePath: string; romId: string }): void;
-      (screen: 'Settings'): void;
+      (screen: 'Settings' | 'Pokedex'): void;
     };
   };
 };
@@ -28,9 +28,14 @@ export function RomListScreen({ navigation }: Props) {
 
   return (
     <View style={styles.container}>
-      <Pressable style={styles.settingsButton} onPress={() => navigation.navigate('Settings')}>
-        <Text style={styles.settingsButtonText}>Settings</Text>
-      </Pressable>
+      <View style={styles.topBar}>
+        <Pressable onPress={() => navigation.navigate('Pokedex')}>
+          <Text style={styles.topBarButtonText}>Pokédex</Text>
+        </Pressable>
+        <Pressable onPress={() => navigation.navigate('Settings')}>
+          <Text style={styles.topBarButtonText}>Settings</Text>
+        </Pressable>
+      </View>
       {roms.length === 0 ? (
         <View style={styles.empty}>
           <Text style={styles.emptyText}>No ROMs yet.</Text>
@@ -63,8 +68,8 @@ export function RomListScreen({ navigation }: Props) {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
-  settingsButton: { alignSelf: 'flex-end', margin: theme.spacing.md },
-  settingsButtonText: { ...theme.typography.body, color: theme.colors.primary, fontWeight: '600' },
+  topBar: { flexDirection: 'row', justifyContent: 'flex-end', gap: theme.spacing.md, margin: theme.spacing.md },
+  topBarButtonText: { ...theme.typography.body, color: theme.colors.primary, fontWeight: '600' },
   empty: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: theme.spacing.md },
   emptyText: { ...theme.typography.body, color: theme.colors.secondaryLabel },
   importButton: {

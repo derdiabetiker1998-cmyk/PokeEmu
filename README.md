@@ -49,6 +49,22 @@ build after that can go through EAS from anywhere, no Mac required). Once
 
 Use the "Import a ROM" button on the home screen to pick a `.gba` file from your device's storage. Only import ROMs you legally own. No ROMs are ever bundled with this app or committed to this repository.
 
+## Pokédex
+
+A completion checklist independent of any ROM — the "Pokédex" button on the
+home screen. Covers the full National Dex (1–1025), every regional
+alternate form (Alolan/Galarian/Hisuian/Paldean), and all 48 real Mega
+Evolutions (1131 entries total). Tap an entry to toggle it caught; progress
+persists locally. Data and sprites are fetched once from PokeAPI via
+`scripts/fetch-pokedex-data.js` and bundled into the app (`assets/pokedex/`)
+so the dex works fully offline — re-run that script plus
+`scripts/generate-sprite-map.js` if the bundled data ever needs refreshing.
+PokeAPI's own data included a number of joke/non-canonical "Mega Evolution"
+entries (e.g. a fictional Mega Baxcalibur — Gen 9 has no Mega Evolutions in
+any real game) and a couple of keyword false-positives (Pikachu's cap
+costume matching the Alolan-form filter); `scripts/fixup-pokedex-data.js`
+filters those against the real, fixed list of 46 Mega-capable species.
+
 ## Project layout
 
 See `docs/superpowers/specs/2026-08-27-gba-emulator-phase1-design.md` for the design spec and `docs/superpowers/plans/2026-08-27-gba-emulator-phase1.md` for the implementation plan (including corrections found while building, against real vendored mGBA headers and real dependency versions).

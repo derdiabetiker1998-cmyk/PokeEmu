@@ -5,12 +5,14 @@ import { RomListScreen } from '../screens/RomListScreen';
 import { EmulatorScreen } from '../screens/EmulatorScreen';
 import { CheatsEditorScreen } from '../screens/CheatsEditorScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { PokedexScreen } from '../screens/PokedexScreen';
 
 export type RootStackParamList = {
   RomList: undefined;
   Emulator: { filePath: string; romId: string };
   CheatsEditor: undefined;
   Settings: undefined;
+  Pokedex: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -23,6 +25,7 @@ export function RootNavigator() {
         <Stack.Screen name="Emulator" component={EmulatorScreen} options={{ title: '' }} />
         <Stack.Screen name="CheatsEditor" component={CheatsEditorScreen} options={{ title: 'Cheats' }} />
         <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
+        <Stack.Screen name="Pokedex" component={PokedexScreen} options={{ title: 'Pokédex' }} />
       </Stack.Navigator>
     </NavigationContainer>
   );
