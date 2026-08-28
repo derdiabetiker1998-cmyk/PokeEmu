@@ -49,7 +49,7 @@ class MainActivity : ReactActivity() {
     // events go through ReactContext.emitDeviceEvent(...) directly instead
     // of the older getJSModule(RCTDeviceEventEmitter::class.java).emit(...)
     // pattern.
-    (application as ReactApplication).reactHost.currentReactContext?.emitDeviceEvent("controllerStatusChanged", connected)
+    (application as ReactApplication).reactHost?.currentReactContext?.emitDeviceEvent("controllerStatusChanged", connected)
   }
 
   override fun dispatchKeyEvent(event: KeyEvent): Boolean {
