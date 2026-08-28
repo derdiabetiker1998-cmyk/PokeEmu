@@ -5,7 +5,7 @@ Personal, offline GBA emulator built on mGBA. Sideload only — not distributed 
 ## Current status (as of this commit)
 
 - **Android:** builds successfully end-to-end via EAS Build (Kotlin, JNI/C++, and the vendored mGBA core all compile and link) — the JS/TS layer is fully covered by Jest (41 tests) plus a clean `npx tsc --noEmit`. Getting the first real build green surfaced several native issues no amount of local type-checking could catch (a nullable `ReactHost` API, mGBA's CMake defaulting to its Qt/SDL desktop frontends, missing header includes, an NDK/mGBA `strtof_l` symbol collision) — all fixed and documented in the git history. **Not yet installed/run on a physical device** — the manual QA checklist below hasn't been walked through yet.
-- **iOS:** the Swift/Objective-C source files are written and staged under `ios-pending/PokeEmu/` (not `ios/PokeEmu/`), because `expo prebuild` cannot generate the real Xcode project on Windows at all. Once `ios/` exists (via WSL with a Linux distro, or a Mac/Linux machine running `npx expo prebuild --platform ios`), these files need to be moved into `ios/PokeEmu/` and added to the Xcode project, and the bridging header needs `#import <React/RCTEventEmitter.h>` added (see `PokeEmuCoreModule.swift`'s note).
+- **iOS:** the Swift/Objective-C source files, plus a first-attempt CMake/CocoaPods setup for building the vendored mGBA core as an iOS module (`ios-pending/mgba.podspec`, `ios-pending/mgba-ios/`), are staged under `ios-pending/` (not `ios/`), because `expo prebuild` refuses to run on Windows at all — confirmed by trying it, not just a CocoaPods gap. WSL was attempted as a workaround and hit a hardware wall (CPU virtualization disabled in BIOS/UEFI, `HCS_E_HYPERV_NOT_INSTALLED`), so this is still blocked on getting real Mac/Linux access. **See `docs/superpowers/specs/2026-08-28-ios-build-setup.md` for the exact, ordered steps to run once that access exists** — none of it has been run or verified yet, and the podspec in particular should be expected to need real debugging against actual `pod install`/Xcode error output, the same way the Android CMake build did.
 - **Manual QA checklist has not been run yet.** An installable Android development build now exists — install it on a physical device and work through the checklist below.
 
 ## Manual QA checklist (to run once a real build exists)
@@ -31,11 +31,19 @@ This machine has no local Android SDK/NDK, so builds go through Expo's cloud bui
 
 ## Running on iOS
 
-Blocked until the real `ios/` Xcode project exists (see "Current status" above). Once it does:
+Blocked until the real `ios/` Xcode project exists — see
+`docs/superpowers/specs/2026-08-28-ios-build-setup.md` for the exact,
+ordered steps (needs one-time Mac/Linux access to run `expo prebuild`; every
+build after that can go through EAS from anywhere, no Mac required). Once
+`ios/` exists and is committed:
 
-1. `npm install && npx pod-install`
-2. `npx eas build --profile development --platform ios` (or open `ios/PokeEmu.xcworkspace` directly in Xcode on a Mac and run there)
-3. Install the resulting build on your device.
+1. `npm install`
+2. Account-free verification build (no Apple Developer account needed):
+   `npx eas build --profile development-simulator --platform ios` — produces
+   an unsigned `.app` for the iOS Simulator.
+3. Real device / TestFlight builds need an Apple Developer account (free
+   tier: ad-hoc installs signed via Xcode; paid $99/year: any TestFlight
+   distribution) — not set up yet.
 
 ## Adding ROMs
 
