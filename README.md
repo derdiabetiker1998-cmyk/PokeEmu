@@ -4,9 +4,9 @@ Personal, offline GBA emulator built on mGBA. Sideload only — not distributed 
 
 ## Current status (as of this commit)
 
-- **Android:** all native code (Kotlin + JNI/C++) is written and type-checked, and the JS/TS layer is fully covered by Jest (38 tests) plus a clean `npx tsc --noEmit`. **The native code has not yet been compiled or run on a real device** — this development machine has no local Android SDK/NDK/Java, so building was deferred to EAS Build (see below).
+- **Android:** builds successfully end-to-end via EAS Build (Kotlin, JNI/C++, and the vendored mGBA core all compile and link) — the JS/TS layer is fully covered by Jest (41 tests) plus a clean `npx tsc --noEmit`. Getting the first real build green surfaced several native issues no amount of local type-checking could catch (a nullable `ReactHost` API, mGBA's CMake defaulting to its Qt/SDL desktop frontends, missing header includes, an NDK/mGBA `strtof_l` symbol collision) — all fixed and documented in the git history. **Not yet installed/run on a physical device** — the manual QA checklist below hasn't been walked through yet.
 - **iOS:** the Swift/Objective-C source files are written and staged under `ios-pending/PokeEmu/` (not `ios/PokeEmu/`), because `expo prebuild` cannot generate the real Xcode project on Windows at all. Once `ios/` exists (via WSL with a Linux distro, or a Mac/Linux machine running `npx expo prebuild --platform ios`), these files need to be moved into `ios/PokeEmu/` and added to the Xcode project, and the bridging header needs `#import <React/RCTEventEmitter.h>` added (see `PokeEmuCoreModule.swift`'s note).
-- **Manual QA checklist has not been run.** Doing so requires an actual build installed on a physical device — the next real step is triggering an EAS development build (`eas build --profile development --platform android`, configured in `eas.json`) and installing it, then working through the checklist below.
+- **Manual QA checklist has not been run yet.** An installable Android development build now exists — install it on a physical device and work through the checklist below.
 
 ## Manual QA checklist (to run once a real build exists)
 
