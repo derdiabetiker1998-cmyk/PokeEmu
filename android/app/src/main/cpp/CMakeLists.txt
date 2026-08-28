@@ -2,6 +2,19 @@ cmake_minimum_required(VERSION 3.22)
 project(pokeemu_bridge)
 
 set(MGBA_DIR ${CMAKE_SOURCE_DIR}/../../../../../vendor/mgba)
+
+# mGBA's own detection (CMakeLists.txt: `if(ANDROID AND ANDROID_NDK_MAJOR
+# GREATER 13)`) relies on ANDROID_NDK_MAJOR, which this NDK's toolchain
+# file/CMake's built-in Android cross-compiling support doesn't set, so it
+# falls through to a find_function(strtof_l) link check. That check can't
+# see strtof_l because the NDK only provides it as a `static inline` in
+# legacy_stdlib_inlines.h (for apps targeting an API level below where it
+# became a real libc symbol) — no exported symbol exists to link against,
+# so the check reports it missing even though it's fully usable. mGBA then
+# defines its own non-static strtof_l, which conflicts with that inline
+# and fails to compile. Force the flag on: this NDK (r27) always ships it.
+set(HAVE_STRTOF_L ON CACHE BOOL "" FORCE)
+
 # EXCLUDE_FROM_ALL sets mGBA's own LIBMGBA_ONLY flag (it reads the
 # directory's EXCLUDE_FROM_ALL property when LIBMGBA_ONLY isn't defined
 # explicitly), which is mGBA's supported way to embed just the core
